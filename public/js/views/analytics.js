@@ -31,6 +31,7 @@ export async function renderAnalytics(el, { meta }) {
       kpi(`${k.closedShare}%`, 'Рассмотрено до итога'),
       kpi(`${k.withResultShare}%`, 'Итогов с зафиксированным результатом'),
       kpi(String(k.implementedCount), 'Реализовано улучшений'),
+      kpi(k.confirmedShare === null ? '—' : `${k.confirmedShare}%`, `Авторы подтвердили решение (оценок: ${k.feedbackCount})`),
       kpi(String(k.overdueCount), 'Просрочено по SLA', k.overdueCount > 0)),
     h('div', { class: 'an-grid' },
       h('section', { class: 'card' },

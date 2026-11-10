@@ -1,5 +1,7 @@
 // Чтение обращений: список с фильтрами, карточка, доска улучшений, похожие.
-import { FINAL_STATUSES, STATUSES, TYPES, PRIORITIES, TRANSITIONS, LIMITS } from './config.js';
+import {
+  FINAL_STATUSES, STATUSES, TYPES, PRIORITIES, TRANSITIONS, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX,
+} from './config.js';
 import { canView, canProcess, canReassign, canSeeAuthor, listScope } from './access.js';
 import { notFound } from './http.js';
 import { findSimilar } from './similarity.js';
@@ -13,6 +15,10 @@ JOIN users a ON a.id = t.author_id
 LEFT JOIN users s ON s.id = t.assignee_id`;
 
 export const isFinal = (status) => FINAL_STATUSES.includes(status);
+
+// SQL-условие просрочки SLA; принимает два параметра — текущее время (дважды).
+export const OVERDUE_SQL = `(t.status NOT IN (${FINAL_STATUSES.map((s) => `'${s}'`).join(',')})
+  AND ((t.first_response_at IS NULL AND t.first_response_due < ?) OR t.due_at < ?))`;
 
 // ISO-строки в UTC сравниваются лексикографически.
 export function slaState(row, nowIso) {
@@ -40,7 +46,8 @@ export function serializeTicket(row, user, nowIso) {
     statusLabel: STATUSES[row.status],
     isAnonymous: Boolean(row.is_anonymous),
     author: canSeeAuthor(user, row) ? { id: row.author_id, name: row.author_name } : null,
-    department: row.department,
+    // У анонимного обращения подразделение скрыто так же, как автор (остаётся только в сводной аналитике).
+    department: canSeeAuthor(user, row) ? row.department : null,
     assignee: row.assignee_id ? { id: row.assignee_id, name: row.assignee_name } : null,
     resolution: row.resolution,
     duplicateOf: row.duplicate_of,
@@ -73,11 +80,17 @@ const FILTERS = [
   ['status', 't.status = ?'],
   ['priority', 't.priority = ?'],
   ['category', 't.category_id = ?'],
-  ['department', 't.department = ?'],
+  // Анонимные обращения не попадают в выборку по подразделению — иначе фильтр раскрывал бы автора.
+  ['department', '(t.department = ? AND t.is_anonymous = 0)'],
   ['assignee', 't.assignee_id = ?'],
 ];
 
-export function listTickets(db, user, query, nowIso) {
+function clampInt(value, fallback, min, max) {
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+
+function buildWhere(user, query, nowIso) {
   const scope = listScope(user);
   const where = [scope.sql];
   const params = [...scope.params];
@@ -99,11 +112,26 @@ export function listTickets(db, user, query, nowIso) {
     const like = `%${String(query.q).slice(0, 100)}%`;
     params.push(like, like, like);
   }
+  if (query.overdue === '1') {
+    where.push(OVERDUE_SQL);
+    params.push(nowIso, nowIso);
+  }
+  return { sql: where.join(' AND '), params };
+}
+
+/**
+ * Постраничный список с фильтрами.
+ * @returns {{ items: object[], total: number, page: number, limit: number }}
+ */
+export function listTickets(db, user, query, nowIso, { maxLimit = PAGE_SIZE_MAX } = {}) {
+  const where = buildWhere(user, query, nowIso);
+  const limit = clampInt(query.limit, Math.min(PAGE_SIZE_DEFAULT, maxLimit), 1, maxLimit);
+  const page = clampInt(query.page, 1, 1, Number.MAX_SAFE_INTEGER);
+  const { total } = db.prepare(`SELECT COUNT(*) AS total FROM tickets t WHERE ${where.sql}`).get(...where.params);
   const rows = db
-    .prepare(`${BASE_SELECT} WHERE ${where.join(' AND ')} ORDER BY t.created_at DESC LIMIT ?`)
-    .all(...params, LIMITS.listMax);
-  const items = rows.map((row) => serializeTicket(row, user, nowIso));
-  return query.overdue === '1' ? items.filter((t) => t.sla.overdue) : items;
+    .prepare(`${BASE_SELECT} WHERE ${where.sql} ORDER BY t.created_at DESC, t.id DESC LIMIT ? OFFSET ?`)
+    .all(...where.params, limit, (page - 1) * limit);
+  return { items: rows.map((row) => serializeTicket(row, user, nowIso)), total, page, limit };
 }
 
 function serializeEvent(event, row, user) {
@@ -146,12 +174,19 @@ export function getTicketDetail(db, user, id, nowIso) {
   const duplicateOf = row.duplicate_of
     ? db.prepare('SELECT id, code, title FROM tickets WHERE id = ?').get(row.duplicate_of)
     : null;
+  const feedback = db
+    .prepare('SELECT is_resolved, comment, created_at FROM feedback WHERE ticket_id = ?')
+    .get(row.id);
   return {
     ...serializeTicket(row, user, nowIso),
     duplicateOf,
     events,
     attachments,
+    feedback: feedback
+      ? { isResolved: Boolean(feedback.is_resolved), comment: feedback.comment, createdAt: feedback.created_at }
+      : null,
     permissions: {
+      canRate: row.author_id === user.id && isFinal(row.status) && !row.duplicate_of && !feedback,
       canProcess: processor,
       canReassign: canReassign(user),
       canComment: row.status !== 'closed',

@@ -1,13 +1,14 @@
-// Точка входа: node server.js  (переменные окружения: PORT, DB_PATH, RESET=1)
+// Точка входа: node server.js  (переменные окружения: PORT, DB_PATH, UPLOADS_DIR, RESET=1)
 import { mkdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './src/app.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(root, 'data');
-const dbPath = resolve(process.env.DB_PATH ?? join(dataDir, 'feedback.db'));
-const uploadsDir = join(dataDir, 'uploads');
+const dbPath = resolve(process.env.DB_PATH ?? join(root, 'data', 'feedback.db'));
+const dataDir = dirname(dbPath);
+// Каталог вложений по умолчанию прежний; тестовые окружения задают свой через UPLOADS_DIR.
+const uploadsDir = resolve(process.env.UPLOADS_DIR ?? join(root, 'data', 'uploads'));
 const port = Number(process.env.PORT ?? 3000);
 
 mkdirSync(dataDir, { recursive: true });

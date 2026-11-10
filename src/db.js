@@ -81,6 +81,26 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+CREATE TABLE IF NOT EXISTS escalations (
+  ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+  kind TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (ticket_id, kind)
+);
+CREATE TABLE IF NOT EXISTS outbox (
+  id INTEGER PRIMARY KEY,
+  channel TEXT NOT NULL,
+  method TEXT NOT NULL,
+  recipient TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS feedback (
+  ticket_id INTEGER PRIMARY KEY REFERENCES tickets(id),
+  is_resolved INTEGER NOT NULL,
+  comment TEXT,
+  created_at TEXT NOT NULL
+);
 `;
 
 export function openDatabase(path) {

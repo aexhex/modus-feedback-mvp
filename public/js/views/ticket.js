@@ -10,6 +10,8 @@ const EVENT_TITLES = {
   support: () => 'Поддержка коллег',
   attachment: () => 'Вложение',
   priority: () => 'Изменение приоритета',
+  escalation: () => 'Эскалация: нарушен срок',
+  feedback: () => 'Оценка автора',
 };
 
 function timeline(events) {
@@ -68,7 +70,7 @@ function factsCard(t, reload) {
     h('dl', { class: 'facts' },
       fact('Категория', t.category.name),
       fact('Автор', t.author ? t.author.name : 'Скрыт (анонимно)'),
-      fact('Подразделение', t.department),
+      fact('Подразделение', t.department ?? 'Скрыто (анонимно)'),
       fact('Ответственный', t.assignee?.name ?? 'Не назначен'),
       fact('Создано', fmtDate(t.createdAt)),
       fact('Первый ответ', t.firstResponseAt ? fmtDate(t.firstResponseAt) : `до ${fmtDate(t.firstResponseDue)}`),
@@ -76,6 +78,31 @@ function factsCard(t, reload) {
       t.resolvedAt && fact('Решено', fmtDate(t.resolvedAt)),
       fact('Поддержали', String(t.supportsCount))),
     supportBtn && h('div', { style: { marginTop: '12px' } }, supportBtn));
+}
+
+// Автор подтверждает, решён ли вопрос, — метрика качества, а не только скорости.
+function ratingBlock(t, reload) {
+  if (t.feedback) {
+    return h('section', { class: `card rating ${t.feedback.isResolved ? 'yes' : 'no'}` },
+      h('h3', null, 'Оценка автора'),
+      h('b', null, t.feedback.isResolved ? 'Вопрос решён' : 'Вопрос не решён'),
+      t.feedback.comment && h('div', { class: 'text-block muted' }, t.feedback.comment));
+  }
+  if (!t.permissions.canRate) return null;
+  const comment = h('textarea', { rows: 2, placeholder: 'Комментарий (необязательно)', maxlength: 3000 });
+  const send = (isResolved) => async () => {
+    try {
+      await post(`/tickets/${t.id}/feedback`, { isResolved, comment: comment.value });
+      toast('Спасибо, оценка учтена', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  return h('section', { class: 'card rating stack' },
+    h('h3', null, 'Ваш вопрос решён?'),
+    comment,
+    h('div', { class: 'row' },
+      h('button', { class: 'btn btn-primary', onclick: send(true) }, 'Да, решён'),
+      h('button', { class: 'btn', onclick: send(false) }, 'Нет, не решён')));
 }
 
 export async function renderTicket(el, { me, meta, params, rerender }) {
@@ -93,6 +120,7 @@ export async function renderTicket(el, { me, meta, params, rerender }) {
           h('h3', null, t.status === 'rejected' ? 'Мотивированный отказ' : 'Результат рассмотрения'),
           h('div', { class: 'text-block' }, t.resolution),
           t.duplicateOf && h('p', null, 'Исходное обращение: ', h('a', { href: `#/t/${t.duplicateOf.id}` }, `${t.duplicateOf.code} — ${t.duplicateOf.title}`))),
+        ratingBlock(t, reload),
         h('section', { class: 'card' },
           h('h3', null, 'Описание'), h('div', { class: 'text-block' }, t.description),
           t.proposedSolution && [h('h3', { style: { marginTop: '18px' } }, 'Предлагаемое решение'), h('div', { class: 'text-block' }, t.proposedSolution)]),

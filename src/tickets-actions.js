@@ -1,6 +1,6 @@
 // Изменение обращений: создание, статусы, комментарии, назначение, поддержка, дубликаты.
 import {
-  TYPES, PRIORITIES, STATUSES, TRANSITIONS, SLA_HOURS, LIMITS, addHours,
+  TYPES, PRIORITIES, STATUSES, TRANSITIONS, SLA_HOURS, LIMITS, addBusinessHours,
 } from './config.js';
 import { canProcess, canReassign } from './access.js';
 import { badRequest, forbidden } from './http.js';
@@ -71,7 +71,7 @@ export function createTicket(db, user, input, now) {
       .run(
         code, data.type, data.categoryId, data.title, data.description, data.proposedSolution, data.priority,
         user.id, data.isAnonymous ? 1 : 0, user.department, assignment.userId, now, now,
-        addHours(now, sla.firstResponse), addHours(now, sla.resolve),
+        addBusinessHours(now, sla.firstResponse), addBusinessHours(now, sla.resolve),
       );
     const ticketId = Number(lastInsertRowid);
     addEvent(db, { ticketId, actorId: user.id, kind: 'created', to: 'new', at: now });
@@ -178,7 +178,7 @@ export function setPriority(db, user, id, input, now) {
   inTransaction(db, () => {
     db.prepare(
       'UPDATE tickets SET priority = ?, first_response_due = ?, due_at = ?, updated_at = ? WHERE id = ?',
-    ).run(priority, addHours(row.created_at, sla.firstResponse), addHours(row.created_at, sla.resolve), now, row.id);
+    ).run(priority, addBusinessHours(row.created_at, sla.firstResponse), addBusinessHours(row.created_at, sla.resolve), now, row.id);
     addEvent(db, {
       ticketId: row.id, actorId: user.id, kind: 'priority',
       body: `Приоритет: ${PRIORITIES[row.priority]} → ${PRIORITIES[priority]}. Сроки SLA пересчитаны`, at: now,
@@ -219,6 +219,31 @@ export function markDuplicate(db, user, id, input, now) {
     notify(db, {
       userIds: [row.author_id], ticketId: row.id, actorId: user.id, now,
       text: `${row.code} объединено с ${original.code} — вы будете получать уведомления по нему`,
+    });
+  });
+}
+
+// Оценка результата автором: «решено / не решено» после итогового статуса (один раз).
+export function rateTicket(db, user, id, input, now) {
+  const row = getVisibleTicketRow(db, user, id);
+  if (row.author_id !== user.id) throw forbidden('Оценить результат может только автор');
+  if (!isFinal(row.status) || row.duplicate_of) throw badRequest('Оценка доступна после итогового решения');
+  if (typeof input.isResolved !== 'boolean') throw badRequest('Укажите, решён ли вопрос');
+  const comment = text(input.comment, { field: 'Комментарий', max: LIMITS.commentMax }) || null;
+  if (db.prepare('SELECT 1 FROM feedback WHERE ticket_id = ?').get(row.id)) {
+    throw badRequest('Оценка уже оставлена');
+  }
+  inTransaction(db, () => {
+    db.prepare('INSERT INTO feedback (ticket_id, is_resolved, comment, created_at) VALUES (?, ?, ?, ?)')
+      .run(row.id, input.isResolved ? 1 : 0, comment, now);
+    const verdict = input.isResolved ? 'вопрос решён' : 'вопрос НЕ решён';
+    addEvent(db, {
+      ticketId: row.id, actorId: user.id, kind: 'feedback', at: now,
+      body: `Оценка автора: ${verdict}${comment ? `\n${comment}` : ''}`,
+    });
+    notify(db, {
+      userIds: [row.assignee_id], ticketId: row.id, actorId: user.id, now,
+      text: `${row.code}: автор оценил результат — ${verdict}`,
     });
   });
 }

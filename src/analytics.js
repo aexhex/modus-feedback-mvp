@@ -68,6 +68,14 @@ function similarPairs(rows) {
   return pairs.sort((x, y) => y.score - x.score).slice(0, 5);
 }
 
+// Оценки авторов: сколько итогов подтверждено как «вопрос решён».
+function authorFeedback(db) {
+  const { total, resolved } = db
+    .prepare('SELECT COUNT(*) AS total, COALESCE(SUM(is_resolved), 0) AS resolved FROM feedback')
+    .get();
+  return { feedbackCount: total, confirmedShare: total === 0 ? null : share(resolved, total) };
+}
+
 export function buildAnalytics(db, nowIso) {
   const rows = db.prepare(BASE_SELECT).all();
   const finals = rows.filter((r) => isFinal(r.status));
@@ -89,6 +97,7 @@ export function buildAnalytics(db, nowIso) {
         .prepare("SELECT COUNT(DISTINCT ticket_id) AS n FROM events WHERE to_status = 'implemented'")
         .get().n,
       overdueCount: overdue.length,
+      ...authorFeedback(db),
     },
     byType: countBy(rows, (r) => r.type, TYPES),
     byStatus: countBy(rows, (r) => r.status, STATUSES),

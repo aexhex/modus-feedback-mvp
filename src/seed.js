@@ -1,5 +1,5 @@
 // Заполнение пустой БД демонстрационными данными из датасета с правдоподобной историей.
-import { SLA_HOURS, addHours } from './config.js';
+import { SLA_HOURS, addHours, addBusinessHours } from './config.js';
 import { inTransaction } from './db.js';
 import { addEvent } from './tickets-actions.js';
 import { notify } from './notifications.js';
@@ -49,7 +49,7 @@ function insertTicket(db, ticket, index, ids, nowMs) {
   ).run(
     id, ticket.code, ticket.type, ids.categories.get(ticket.category), ticket.title, ticket.description,
     ticket.priority, ticket.status, authorId, author[2], assigneeId, resolution, created,
-    last ? at(last[1]) : created, at(sla.firstResponse), at(sla.resolve),
+    last ? at(last[1]) : created, addBusinessHours(created, sla.firstResponse), addBusinessHours(created, sla.resolve),
     steps.length ? at(steps[0][1]) : null,
     resolution ? at(last[1]) : null,
   );

@@ -49,12 +49,25 @@ function usersCard(users, me, reload) {
           h('input', { type: 'checkbox', checked: u.isAvailable, disabled: u.id === me.id, onchange: toggle(u) }), 'на месте')))));
 }
 
+// Журнал того, что ушло бы в Битрикс24 (REST im.notify). Реальной отправки в MVP нет.
+function outboxCard(items) {
+  return h('section', { class: 'card' },
+    h('h3', null, 'Уведомления в Битрикс24 — имитация'),
+    h('p', { class: 't-sub' }, 'Интеграция не подключена: здесь показано, какие вызовы im.notify система отправила бы на портал. Последние 50 записей.'),
+    items.length === 0 ? h('p', { class: 'muted' }, 'Пока пусто')
+      : h('ul', { class: 'list-plain' }, items.map((o) => h('li', null,
+        h('div', null, h('span', { class: 'chip' }, `${o.channel} · ${o.method}`), ' → ', h('b', null, o.recipient)),
+        h('div', null, o.payload.MESSAGE),
+        h('div', { class: 't-sub' }, new Date(o.createdAt).toLocaleString('ru-RU'))))));
+}
+
 export async function renderAdmin(el, { me, rerender, refreshMeta }) {
-  const [categories, users] = await Promise.all([get('/admin/categories'), get('/admin/users')]);
+  const [categories, users, outbox] = await Promise.all([get('/admin/categories'), get('/admin/users'), get('/admin/outbox')]);
   const staff = users.filter((u) => u.role !== 'employee');
   const reload = async () => { await refreshMeta(); rerender(); };
   mount(el,
     h('div', { class: 'page-head' },
       h('div', null, h('h1', null, 'Настройки'), h('p', null, 'Справочник категорий, правила маршрутизации и замещение ответственных.'))),
-    h('div', { class: 'grid-2' }, categoriesCard(categories, staff, reload), usersCard(users, me, reload)));
+    h('div', { class: 'grid-2' }, categoriesCard(categories, staff, reload), usersCard(users, me, reload)),
+    outboxCard(outbox));
 }
