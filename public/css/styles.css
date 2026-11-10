@@ -168,6 +168,7 @@ textarea { resize: vertical; min-height: 96px; }
 .t-title { font-weight: 600; }
 .t-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .count { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+.pager { display: flex; gap: 12px; align-items: center; justify-content: center; margin-top: 16px; }
 
 /* ---------- Форма нового обращения ---------- */
 .type-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -201,11 +202,17 @@ textarea { resize: vertical; min-height: 96px; }
 .tl-item.k-status .tl-dot { border-color: var(--st-work); }
 .tl-item.k-comment .tl-dot { border-color: var(--ink); }
 .tl-item.k-support .tl-dot { border-color: var(--signal); }
+.tl-item.k-escalation .tl-dot { border-color: var(--danger); background: var(--danger); }
+.tl-item.k-escalation .tl-body { background: var(--danger-soft); }
+.tl-item.k-feedback .tl-dot { border-color: var(--st-done); }
 .tl-item.internal .tl-body { background: #fff8e6; border: 1px dashed #e4c56b; }
 .tl-meta { font-size: 12px; color: var(--muted); }
 .tl-body { margin-top: 6px; padding: 10px 12px; background: #faf9f5; border-radius: var(--r-sm); white-space: pre-wrap; }
 .tag-internal { font-size: 11px; font-weight: 700; color: #8a6400; background: #fbecc0; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
 .attach { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.rating { border-left: 4px solid var(--signal); }
+.rating.yes { border-left-color: var(--st-done); }
+.rating.no { border-left-color: var(--danger); }
 .callout { background: var(--signal-soft); border-radius: var(--r-md); padding: 12px 14px; font-size: 14px; }
 
 /* ---------- Доска улучшений ---------- */
@@ -288,3 +295,4 @@ textarea { resize: vertical; min-height: 96px; }
   .bar-row { grid-template-columns: 110px 1fr 30px; }
   .notif-panel { width: min(360px, calc(100vw - 32px)); }
 }
+.table th:nth-child(2) { width: 34%; }

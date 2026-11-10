@@ -20,7 +20,7 @@ function run(action, onDone) {
 }
 
 function statusForm(t, onDone) {
-  const statusIn = h('select', null, options(t.permissions.allowedStatuses, { empty: 'Выберите новый статус' }));
+  const statusIn = h('select', { 'aria-label': 'Новый статус' }, options(t.permissions.allowedStatuses, { empty: 'Выберите новый статус' }));
   const commentIn = h('textarea', { rows: 3, placeholder: 'Комментарий для автора' });
   const resolutionIn = h('textarea', { rows: 3, placeholder: 'Что решено и что сделано' });
   const resolutionField = field('Результат рассмотрения', resolutionIn, 'Обязателен для итоговых статусов — автор увидит его');

@@ -1,0 +1,10 @@
+.git
+.github
+.claude
+node_modules
+data
+docs
+e2e
+test
+test-results
+playwright-report

@@ -1,5 +1,5 @@
 // HTTP API. Все ответы — конверт { ok, data, error }.
-import { TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, SESSION_COOKIE } from './config.js';
+import { TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, SESSION_COOKIE, SESSION_TTL_HOURS } from './config.js';
 import { forbidden, badRequest } from './http.js';
 import { canSeeAnalytics, canAdminister } from './access.js';
 import { login, logout } from './auth.js';
@@ -7,12 +7,13 @@ import {
   listTickets, getTicketDetail, similarTickets, improvementsBoard,
 } from './tickets-query.js';
 import {
-  createTicket, changeStatus, addComment, reassign, setPriority, supportTicket, markDuplicate,
+  createTicket, changeStatus, addComment, reassign, setPriority, supportTicket, markDuplicate, rateTicket,
 } from './tickets-actions.js';
+import { exportTicketsCsv } from './export.js';
 import { buildAnalytics } from './analytics.js';
 import { listCategories, listUsers, createCategory, updateCategory, setAvailability } from './admin.js';
 import { uploadAttachment, readAttachment } from './attachments.js';
-import { listNotifications, markAllRead } from './notifications.js';
+import { listNotifications, markAllRead, listOutbox } from './notifications.js';
 
 const cookie = (token, maxAge) =>
   `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
@@ -32,7 +33,7 @@ export function registerRoutes(router) {
   add('GET', '/api/demo-users', ({ ctx }) => ({ users: listUsers(ctx.db), roles: ROLES }), PUBLIC);
   add('POST', '/api/session', ({ ctx, body, res }) => {
     const token = login(ctx.db, body.userId, ctx.now());
-    res.setHeader('Set-Cookie', cookie(token, 60 * 60 * 12));
+    res.setHeader('Set-Cookie', cookie(token, SESSION_TTL_HOURS * 3600));
     return { loggedIn: true };
   }, { ...PUBLIC, mutate: true });
   add('DELETE', '/api/session', ({ ctx, token, res }) => {
@@ -48,13 +49,24 @@ export function registerRoutes(router) {
     priorities: toList(PRIORITIES),
     statuses: toList(STATUSES),
     categories: listCategories(ctx.db, { activeOnly: true }).map(({ id, name }) => ({ id, name })),
-    departments: ctx.db.prepare('SELECT DISTINCT department FROM tickets ORDER BY department').all().map((r) => r.department),
+    departments: ctx.db.prepare('SELECT DISTINCT department FROM tickets WHERE is_anonymous = 0 ORDER BY department').all().map((r) => r.department),
     staff: listUsers(ctx.db).filter((u) => u.role !== 'employee'),
     limits: { attachmentBytes: LIMITS.attachmentBytes },
   }));
 
   // --- Обращения ---
-  add('GET', '/api/tickets', ({ ctx, user, query }) => listTickets(ctx.db, user, query, ctx.now()));
+  add('GET', '/api/tickets', ({ ctx, user, query, setMeta }) => {
+    const { items, total, page, limit } = listTickets(ctx.db, user, query, ctx.now());
+    setMeta({ total, page, limit });
+    return items;
+  });
+  add('GET', '/api/tickets/export', ({ ctx, user, query, sendRaw }) => {
+    sendRaw(Buffer.from(exportTicketsCsv(ctx.db, user, query, ctx.now()), 'utf8'), {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="obrashcheniya.csv"',
+      'Cache-Control': 'no-store',
+    });
+  });
   add('GET', '/api/tickets/similar', ({ ctx, user, query }) =>
     similarTickets(ctx.db, user, String(query.text || '').slice(0, 2000)));
   add('POST', '/api/tickets', ({ ctx, user, body, status }) => {
@@ -74,6 +86,7 @@ export function registerRoutes(router) {
   action('assign', reassign);
   action('priority', setPriority);
   action('duplicate', markDuplicate);
+  action('feedback', rateTicket);
 
   add('POST', '/api/tickets/:id/support', ({ ctx, user, params }) =>
     ({ supportsCount: supportTicket(ctx.db, user, params.id, ctx.now()) }), MUTATE);
@@ -117,6 +130,10 @@ export function registerRoutes(router) {
     updateCategory(ctx.db, params.id, body);
     return listCategories(ctx.db);
   }, MUTATE);
+  add('GET', '/api/admin/outbox', ({ ctx, user }) => {
+    requireRole(canAdminister, user);
+    return listOutbox(ctx.db);
+  });
   add('GET', '/api/admin/users', ({ ctx, user }) => {
     requireRole(canAdminister, user);
     return listUsers(ctx.db);
