@@ -1,0 +1,15 @@
+{
+  "name": "modus-feedback-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MVP системы обратной связи и предложений сотрудников (хакатон ГК «Модус Трейд»)",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "reset": "node -e \"process.env.RESET='1'; import('./server.js')\"",
+    "test": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js test/"
+  }
+}
