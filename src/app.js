@@ -59,12 +59,15 @@ async function serveStatic(publicDir, pathname, res) {
 export function createApp({
   dbPath, uploadsDir, publicDir, now = () => new Date().toISOString(), seed = true, logger = console,
   escalationIntervalMs = ESCALATION_INTERVAL_MS,
+  // Демо-режим разрешает сброс данных кнопкой в настройках. Включается только явно (DEMO_MODE=1),
+  // чтобы случайный запуск без настройки не открыл стирание данных.
+  demoMode = process.env.DEMO_MODE === '1',
 }) {
   const db = openDatabase(dbPath);
   if (seed) seedIfEmpty(db, now());
   seedTemplates(db);
   escalateOverdue(db, now());
-  const ctx = { db, uploadsDir, now };
+  const ctx = { db, uploadsDir, now, demoMode };
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);

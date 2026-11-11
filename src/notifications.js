@@ -13,12 +13,13 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
     "INSERT INTO outbox (channel, method, recipient, payload, created_at) VALUES ('bitrix24', 'im.notify', ?, ?, ?)",
   );
   const nameOf = db.prepare('SELECT name FROM users WHERE id = ?');
-  // Журнал виден администратору, поэтому получатель-автор анонимного обращения в нём обезличен.
-  const ticket = db.prepare('SELECT author_id, is_anonymous FROM tickets WHERE id = ?').get(ticketId);
-  const hiddenAuthorId = ticket?.is_anonymous ? ticket.author_id : null;
+  // Журнал виден администратору. У анонимного обращения скрыты все получатели, а не только автор:
+  // если бы скрывалось одно имя, его можно было бы вычислить по разнице с остальными.
+  const ticket = ticketId ? db.prepare('SELECT is_anonymous FROM tickets WHERE id = ?').get(ticketId) : null;
+  const hideAll = Boolean(ticket?.is_anonymous);
   for (const userId of unique) {
     insert.run(userId, ticketId, text, now);
-    const recipient = userId === hiddenAuthorId ? 'Автор (анонимно)' : (nameOf.get(userId)?.name ?? `user:${userId}`);
+    const recipient = hideAll ? 'Получатель скрыт (анонимное обращение)' : (nameOf.get(userId)?.name ?? `user:${userId}`);
     toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: `/#/t/${ticketId}` }), now);
   }
 }

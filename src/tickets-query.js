@@ -6,10 +6,12 @@ import { canView, canProcess, canReassign, canSeeAuthor, listScope } from './acc
 import { notFound } from './http.js';
 import { findSimilar } from './similarity.js';
 import { getReport, canReport } from './reports.js';
+import { ticketVoting } from './votes.js';
 
 export const BASE_SELECT = `
 SELECT t.*, c.name AS category_name, a.name AS author_name, s.name AS assignee_name,
-  (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supports_count
+  (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supports_count,
+  (SELECT COALESCE(SUM(v.count), 0) FROM idea_votes v WHERE v.ticket_id = t.id) AS votes_count
 FROM tickets t
 JOIN categories c ON c.id = t.category_id
 JOIN users a ON a.id = t.author_id
@@ -60,6 +62,7 @@ export function serializeTicket(row, user, nowIso) {
     dueAt: row.due_at,
     resolvedAt: row.resolved_at,
     supportsCount: row.supports_count,
+    votesCount: row.votes_count,
     sla: slaState(row, nowIso),
   };
 }
@@ -142,7 +145,7 @@ export function listTickets(db, user, query, nowIso, { maxLimit = PAGE_SIZE_MAX 
   const page = clampInt(query.page, 1, 1, Number.MAX_SAFE_INTEGER);
   const { total } = db.prepare(`SELECT COUNT(*) AS total FROM tickets t WHERE ${where.sql}`).get(...where.params);
   const rows = db
-    .prepare(`${BASE_SELECT} WHERE ${where.sql} ORDER BY t.created_at DESC, t.id DESC LIMIT ? OFFSET ?`)
+    .prepare(`${BASE_SELECT} WHERE ${where.sql} ORDER BY ${query.sort === 'votes' ? 'votes_count DESC, ' : ''}t.created_at DESC, t.id DESC LIMIT ? OFFSET ?`)
     .all(...where.params, limit, (page - 1) * limit);
   return { items: rows.map((row) => serializeTicket(row, user, nowIso)), total, page, limit };
 }
@@ -206,6 +209,7 @@ export function getTicketDetail(db, user, id, nowIso) {
     isWatching: watching,
     b24Task: taskEvent ? { text: taskEvent.body, createdAt: taskEvent.created_at } : null,
     report: getReport(db, row.id),
+    voting: row.is_public && row.type === 'idea' ? ticketVoting(db, user, row) : null,
     feedback: feedback
       ? { isResolved: Boolean(feedback.is_resolved), comment: feedback.comment, createdAt: feedback.created_at }
       : null,
@@ -275,10 +279,11 @@ export function improvementsBoard(db) {
   const openIdeas = db
     .prepare(
       `SELECT t.id, t.code, t.title, t.status, c.name AS category,
-              (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supportsCount
+              (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supportsCount,
+              (SELECT COALESCE(SUM(v.count), 0) FROM idea_votes v WHERE v.ticket_id = t.id) AS votesCount
        FROM tickets t JOIN categories c ON c.id = t.category_id
-       WHERE t.status NOT IN ('implemented','rejected','closed') AND t.type != 'praise'
-       ORDER BY supportsCount DESC, t.created_at DESC LIMIT 10`,
+       WHERE t.status NOT IN ('implemented','rejected','closed') AND t.type != 'praise' AND t.is_public = 1
+       ORDER BY votesCount DESC, supportsCount DESC, t.created_at DESC LIMIT 10`,
     )
     .all()
     .map((r) => ({ ...r, statusLabel: STATUSES[r.status] }));

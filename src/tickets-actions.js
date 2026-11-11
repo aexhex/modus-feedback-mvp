@@ -117,6 +117,8 @@ export function changeStatus(db, user, id, input, now) {
       body: [comment, isFinal(target) && resolutionInput && `Результат: ${resolutionInput}`].filter(Boolean).join('\n') || null,
       at: now,
     });
+    // Рассмотренная идея возвращает голоса: записи удаляются, чтобы повторное открытие не вернуло их обратно.
+    if (isFinal(target)) db.prepare('DELETE FROM idea_votes WHERE ticket_id = ?').run(row.id);
     // Повторное открытие: прежняя оценка автора относилась к старому итогу и больше не действует.
     if (isFinal(row.status) && !isFinal(target)) {
       const { changes } = db.prepare('DELETE FROM feedback WHERE ticket_id = ?').run(row.id);
@@ -280,6 +282,8 @@ export function setPublic(db, user, id, input, now) {
   if (Boolean(row.is_public) === input.isPublic) return;
   inTransaction(db, () => {
     db.prepare('UPDATE tickets SET is_public = ?, updated_at = ? WHERE id = ?').run(input.isPublic ? 1 : 0, now, row.id);
+    // Снятая с ленты идея возвращает голоса тем, кто за неё голосовал.
+    if (!input.isPublic) db.prepare('DELETE FROM idea_votes WHERE ticket_id = ?').run(row.id);
     addEvent(db, {
       ticketId: row.id, actorId: user.id, kind: 'publish', at: now,
       body: input.isPublic ? 'Обращение опубликовано в ленте идей' : 'Обращение убрано из ленты идей',

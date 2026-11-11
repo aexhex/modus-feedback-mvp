@@ -120,10 +120,14 @@ export function processingCard(t, meta, onDone) {
     h('h3', null, 'Рассмотрение'),
     t.isPublic && h('div', { class: 'callout' }, 'Обращение опубликовано в ленте идей: ваши ответы, результат и приложенные файлы видят все сотрудники. Для служебного используйте внутренние заметки.'),
     p.allowedStatuses.length ? statusForm(t, meta, onDone) : h('p', { class: 'muted' }, 'Обращение закрыто.'),
-    open && h('div', { class: 'stack' }, h('h3', null, 'Приоритет и SLA'), priorityForm(t, meta, onDone)),
-    p.canReassign && h('div', { class: 'stack' }, h('h3', null, 'Ответственный'), assignForm(t, meta, onDone)),
-    p.canInvite && h('div', { class: 'stack' }, h('h3', null, 'Позвать коллегу'), inviteForm(t, meta, onDone)),
     p.canReport && h('div', { class: 'stack' }, h('h3', null, 'Отчёт о внедрении'), reportForm(t, onDone)),
-    h('div', { class: 'stack' }, h('h3', null, 'Задача в Битрикс24'), taskBlock(t, onDone)),
-    open && h('div', { class: 'stack' }, h('h3', null, 'Повторное обращение'), duplicateForm(t, onDone)));
+    // Редкие действия свёрнуты, чтобы на виду оставалось главное: статус и результат.
+    h('details', { class: 'more-actions' },
+      h('summary', null, 'Ещё действия'),
+      h('div', { class: 'stack' },
+        open && h('div', { class: 'stack' }, h('h3', null, 'Приоритет и SLA'), priorityForm(t, meta, onDone)),
+        p.canReassign && h('div', { class: 'stack' }, h('h3', null, 'Ответственный'), assignForm(t, meta, onDone)),
+        p.canInvite && h('div', { class: 'stack' }, h('h3', null, 'Позвать коллегу'), inviteForm(t, meta, onDone)),
+        h('div', { class: 'stack' }, h('h3', null, 'Задача в Битрикс24'), taskBlock(t, onDone)),
+        open && h('div', { class: 'stack' }, h('h3', null, 'Повторное обращение'), duplicateForm(t, onDone)))));
 }

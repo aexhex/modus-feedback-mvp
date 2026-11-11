@@ -32,7 +32,10 @@ export function inviteWatcher(db, user, id, input, now) {
     .prepare("SELECT id, name FROM users WHERE id = ? AND role IN ('handler','manager','admin') AND is_active = 1")
     .get(Number(input.userId));
   if (!target) throw badRequest('Выберите коллегу с ролью обработчика');
-  if ([row.assignee_id, row.author_id, user.id].includes(target.id)) throw badRequest('Этот сотрудник уже участвует в обращении');
+  // Автора анонимного обращения приглашают так же, как любого коллегу: отдельная ошибка выдала бы,
+  // кто автор. Для обычного обращения автор известен и так, поэтому его приглашение отклоняется.
+  const participants = row.is_anonymous ? [row.assignee_id, user.id] : [row.assignee_id, row.author_id, user.id];
+  if (participants.includes(target.id)) throw badRequest('Этот сотрудник уже участвует в обращении');
   inTransaction(db, () => {
     const { changes } = db
       .prepare('INSERT OR IGNORE INTO watchers (ticket_id, user_id, created_at) VALUES (?, ?, ?)')
