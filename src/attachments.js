@@ -3,7 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, extname, basename } from 'node:path';
 import { ALLOWED_EXTENSIONS, LIMITS } from './config.js';
-import { badRequest, notFound } from './http.js';
+import { badRequest, forbidden, notFound } from './http.js';
+import { canProcess } from './access.js';
 import { getVisibleTicketRow } from './tickets-query.js';
 import { addEvent } from './tickets-actions.js';
 
@@ -12,6 +13,9 @@ const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 export function uploadAttachment(db, uploadsDir, user, ticketId, input, now) {
   const row = getVisibleTicketRow(db, user, ticketId);
   if (row.status === 'closed') throw badRequest('Обращение закрыто');
+  // Читать обращение могут и наблюдатели, и все сотрудники (если оно в ленте), а прикладывать файлы —
+  // только автор и обработчик: подписаться может любой читатель, поэтому подписка права не даёт.
+  if (row.author_id !== user.id && !canProcess(user, row)) throw forbidden('Файлы прикладывают автор и ответственный');
   const name = basename(String(input.name || '')).slice(0, 120);
   const ext = extname(name).toLowerCase();
   if (!name || !ALLOWED_EXTENSIONS.includes(ext)) {

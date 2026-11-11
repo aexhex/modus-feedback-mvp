@@ -1,5 +1,6 @@
 import { h, mount } from '../dom.js';
 import { get } from '../api.js';
+import { weeklyFlowChart, responseTimeChart } from '../chart.js';
 
 const MAX_CATEGORY_BARS = 10;
 
@@ -23,7 +24,8 @@ export async function renderAnalytics(el, { meta }) {
   mount(el,
     h('div', { class: 'page-head' },
       h('div', null, h('h1', null, 'Аналитика обращений'),
-        h('p', null, 'Показатели из ТЗ: доля рассмотренных, время до первого ответа, доля с зафиксированным результатом, реализованные улучшения.'))),
+        h('p', null, 'Показатели из ТЗ: доля рассмотренных, время до первого ответа, доля с зафиксированным результатом, реализованные улучшения.')),
+      h('a', { class: 'btn', href: '#/report' }, 'Отчёт за период')),
     h('div', { class: 'kpis' },
       kpi(String(a.total), 'Всего обращений'),
       kpi(`${k.reviewedShare}%`, 'Получили первый ответ'),
@@ -31,7 +33,11 @@ export async function renderAnalytics(el, { meta }) {
       kpi(`${k.closedShare}%`, 'Рассмотрено до итога'),
       kpi(`${k.withResultShare}%`, 'Итогов с зафиксированным результатом'),
       kpi(String(k.implementedCount), 'Реализовано улучшений'),
+      kpi(k.confirmedShare === null ? '—' : `${k.confirmedShare}%`, `Авторы подтвердили решение (оценок: ${k.feedbackCount})`),
       kpi(String(k.overdueCount), 'Просрочено по SLA', k.overdueCount > 0)),
+    h('div', { class: 'an-grid an-charts' },
+      h('section', { class: 'card' }, weeklyFlowChart(a.weekly)),
+      h('section', { class: 'card' }, responseTimeChart(a.weekly))),
     h('div', { class: 'an-grid' },
       h('section', { class: 'card' },
         h('h3', null, 'Просроченные — требуют внимания'),
@@ -49,6 +55,14 @@ export async function renderAnalytics(el, { meta }) {
       bars('По статусам', a.byStatus),
       bars('По категориям', a.byCategory.slice(0, MAX_CATEGORY_BARS)),
       bars('По подразделениям авторов', a.byDepartment),
+      bars('Среднее время в статусе, часов', a.timeInStatus.map((s) => ({ label: s.label, count: s.avgHours }))),
+      h('section', { class: 'card' },
+        h('h3', null, 'Нагрузка по ответственным'),
+        h('div', { class: 'table-scroll' }, h('table', { class: 'table report-table' },
+          h('thead', null, h('tr', null, ['Ответственный', 'В работе', 'Без ответа', 'Просрочено'].map((c) => h('th', null, c)))),
+          h('tbody', null, a.workload.map((w) => h('tr', null,
+            h('td', null, w.name), h('td', null, String(w.open)), h('td', null, String(w.waiting)),
+            h('td', null, w.overdue > 0 ? h('span', { class: 'chip chip-danger' }, String(w.overdue)) : '0'))))))),
       h('section', { class: 'card' },
         h('h3', null, 'Возможные дубликаты среди открытых'),
         a.similarPairs.length === 0 ? h('p', { class: 'muted' }, 'Похожих открытых обращений не найдено')

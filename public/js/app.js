@@ -1,5 +1,5 @@
 // Оболочка SPA: сессия, навигация по ролям, хэш-роутер, колокольчик уведомлений.
-import { h, mount, toast } from './dom.js';
+import { h, mount, toast, icon } from './dom.js';
 import { get, post, del } from './api.js';
 import { renderLogin } from './views/login.js';
 import { renderList } from './views/list.js';
@@ -8,6 +8,11 @@ import { renderTicket } from './views/ticket.js';
 import { renderBoard } from './views/board.js';
 import { renderAnalytics } from './views/analytics.js';
 import { renderAdmin } from './views/admin.js';
+import { renderHome } from './views/home.js';
+import { renderKanban } from './views/kanban.js';
+import { renderSurveys } from './views/surveys.js';
+import { renderClients, renderClientForm } from './views/clients.js';
+import { renderReport } from './views/report.js';
 
 const NOTIFY_POLL_MS = 30_000;
 const root = document.getElementById('app');
@@ -17,12 +22,17 @@ let pollTimer = null;
 const isOversight = (me) => me.role === 'manager' || me.role === 'admin';
 
 const ROUTES = [
+  { re: /^\/home$/, view: renderHome },
+  { re: /^\/kanban$/, view: renderKanban, allow: (me) => me.role !== 'employee' },
   { re: /^\/new$/, view: renderNew },
   { re: /^\/tickets$/, view: renderList },
   { re: /^\/t\/(\d+)$/, view: renderTicket },
   { re: /^\/board$/, view: renderBoard },
   { re: /^\/analytics$/, view: renderAnalytics, allow: isOversight },
   { re: /^\/admin$/, view: renderAdmin, allow: (me) => me.role === 'admin' },
+  { re: /^\/surveys(?:\/(\d+)(\/results)?)?$/, view: renderSurveys },
+  { re: /^\/clients$/, view: renderClients, allow: isOversight },
+  { re: /^\/report$/, view: renderReport, allow: isOversight },
 ];
 
 function parseHash() {
@@ -31,11 +41,7 @@ function parseHash() {
   return { path, query: Object.fromEntries(new URLSearchParams(query)) };
 }
 
-function defaultRoute(me) {
-  if (me.role === 'handler') return '#/tickets?scope=assigned';
-  if (isOversight(me)) return '#/tickets?scope=all';
-  return '#/tickets?scope=mine';
-}
+const defaultRoute = () => '#/home';
 
 function go(hash) {
   if (location.hash === hash) render();
@@ -54,11 +60,16 @@ async function loadSession() {
 
 function navItems(me) {
   return [
+    { href: '#/home', label: 'Главная' },
     { href: '#/tickets?scope=mine', label: 'Мои обращения' },
     me.role === 'handler' && { href: '#/tickets?scope=assigned', label: 'Назначенные мне' },
     isOversight(me) && { href: '#/tickets?scope=all', label: 'Все обращения' },
+    me.role !== 'employee' && { href: '#/kanban', label: 'Доска задач' },
+    { href: '#/tickets?scope=feed', label: 'Лента идей' },
     { href: '#/board', label: 'Доска улучшений' },
+    { href: '#/surveys', label: 'Опросы' },
     isOversight(me) && { href: '#/analytics', label: 'Аналитика' },
+    isOversight(me) && { href: '#/clients', label: 'Отзывы клиентов' },
     me.role === 'admin' && { href: '#/admin', label: 'Настройки' },
   ].filter(Boolean);
 }
@@ -80,7 +91,25 @@ function bell() {
     count.hidden = true;
   };
   return h('div', { class: 'bell' },
-    h('button', { class: 'btn btn-ghost', 'aria-label': 'Уведомления', onclick: toggle }, '🔔'), count, panel);
+    h('button', { class: 'btn btn-ghost', 'aria-label': 'Уведомления', onclick: toggle }, icon('bell', 20)), count, panel);
+}
+
+function themeToggle() {
+  const isDark = () => document.documentElement.dataset.theme === 'dark';
+  const btn = h('button', {
+    class: 'btn btn-ghost', 'aria-label': 'Переключить светлую и тёмную тему', title: 'Светлая / тёмная тема',
+    onclick: () => {
+      const next = isDark() ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try {
+        localStorage.setItem('theme', next);
+      } catch {
+        // Хранилище недоступно: тема сменится до перезагрузки страницы.
+      }
+      btn.replaceChildren(icon(isDark() ? 'sun' : 'moon', 20));
+    },
+  }, icon(isDark() ? 'sun' : 'moon', 20));
+  return btn;
 }
 
 async function refreshBell() {
@@ -96,6 +125,12 @@ async function refreshBell() {
 }
 
 async function logout() {
+  // Черновик обращения не должен достаться следующему человеку за этим компьютером.
+  try {
+    localStorage.removeItem(`draft:${session.me?.id}`);
+  } catch {
+    // Хранилище недоступно — черновика и не было.
+  }
   await del('/session').catch(() => null);
   clearInterval(pollTimer);
   Object.assign(session, { me: null, meta: null });
@@ -117,6 +152,7 @@ function shell(me, path, query) {
       h('div', { class: 'side-foot' }, 'MVP · демонстрационные данные')),
     h('div', { class: 'main' },
       h('header', { class: 'topbar' },
+        themeToggle(),
         bell(),
         h('div', { class: 'user-chip' }, h('b', null, me.name), h('span', null, `${me.roleLabel} · ${me.department}`)),
         h('button', { class: 'btn btn-sm', onclick: logout }, 'Сменить роль')),
@@ -126,6 +162,11 @@ function shell(me, path, query) {
 
 async function render() {
   const { path, query } = parseHash();
+  // Форма отзыва для клиентов открывается без входа — и у сотрудника, и у постороннего.
+  if (path === '/client') {
+    root.className = 'app app-login';
+    return renderClientForm(root);
+  }
   if (!session.me) {
     root.className = 'app app-login';
     return renderLogin(root, {

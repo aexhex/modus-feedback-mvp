@@ -5,10 +5,15 @@ import { createApp } from '../src/app.js';
 
 const silentLogger = { error: () => {} };
 
+// Среда, 12:00 по Москве — фиксированное «сейчас», чтобы расчёт рабочих дней SLA был детерминированным.
+export const TEST_NOW = '2026-11-11T09:00:00.000Z';
+
 export async function startTestApp() {
+  let current = TEST_NOW;
   const uploadsDir = mkdtempSync(join(tmpdir(), 'fb-test-'));
   const { server, db } = createApp({
     dbPath: ':memory:', uploadsDir, publicDir: join(import.meta.dirname, '..', 'public'), logger: silentLogger,
+    now: () => current, escalationIntervalMs: 0,
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -38,5 +43,6 @@ export async function startTestApp() {
     };
   }
 
-  return { base, db, as, userId, ticketId, request, close: () => new Promise((r) => server.close(r)) };
+  const setNow = (iso) => { current = iso; };
+  return { base, db, as, userId, ticketId, request, setNow, close: () => new Promise((r) => server.close(r)) };
 }

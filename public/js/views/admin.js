@@ -1,5 +1,6 @@
 import { h, mount, toast, options } from '../dom.js';
 import { get, post, patch } from '../api.js';
+import { templatesCard, holidaysCard, usersAdminCard, auditCard } from './admin-extra.js';
 
 const ROLE_LABELS = { employee: 'Сотрудник', handler: 'Ответственный', manager: 'Руководитель', admin: 'Администратор' };
 
@@ -32,29 +33,64 @@ function categoriesCard(categories, staff, reload) {
       h('div', { style: { flex: '1', minWidth: '220px' } }, nameIn), h('button', { class: 'btn btn-primary', type: 'submit' }, 'Добавить категорию')));
 }
 
-function usersCard(users, me, reload) {
-  const toggle = (u) => async (e) => {
+// Журнал того, что ушло бы в Битрикс24 (REST im.notify). Реальной отправки в MVP нет.
+function outboxCard(items) {
+  return h('section', { class: 'card' },
+    h('h3', null, 'Уведомления в Битрикс24 — имитация'),
+    h('p', { class: 't-sub' }, 'Интеграция не подключена: здесь показано, какие вызовы im.notify система отправила бы на портал. Последние 50 записей.'),
+    items.length === 0 ? h('p', { class: 'muted' }, 'Пока пусто')
+      : h('ul', { class: 'list-plain' }, items.map((o) => h('li', null,
+        h('div', null, h('span', { class: 'chip' }, `${o.channel} · ${o.method}`), ' → ', h('b', null, o.recipient)),
+        h('div', null, o.payload.MESSAGE),
+        h('div', { class: 't-sub' }, new Date(o.createdAt).toLocaleString('ru-RU'))))));
+}
+
+// Сроки SLA в рабочих днях; действуют для обращений, созданных после сохранения.
+function slaCard(sla, reload) {
+  const inputs = new Map();
+  const num = (item, key) => {
+    const input = h('input', { type: 'number', min: 1, max: 90, step: 1, value: String(item[key]), 'aria-label': `${item.label}: ${key === 'firstResponseDays' ? 'первый ответ' : 'решение'}` });
+    inputs.set(`${item.key}.${key}`, input);
+    return input;
+  };
+  const save = async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(sla.map((item) => [item.key, {
+      firstResponseDays: Number(inputs.get(`${item.key}.firstResponseDays`).value),
+      resolveDays: Number(inputs.get(`${item.key}.resolveDays`).value),
+    }]));
     try {
-      await patch(`/admin/users/${u.id}`, { isAvailable: e.target.checked });
-      toast(`${u.name}: ${e.target.checked ? 'доступен' : 'отсутствует'}`, 'success');
-    } catch (err) { toast(err.message, 'error'); reload(); }
+      await patch('/admin/sla', body);
+      toast('Сроки сохранены — действуют для новых обращений', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
   };
   return h('section', { class: 'card' },
-    h('h3', null, 'Доступность ответственных'),
-    h('p', { class: 't-sub' }, 'Отметьте отпуск или болезнь — новые обращения уйдут резервному ответственному.'),
-    h('ul', { class: 'list-plain' }, users.filter((u) => u.role !== 'employee').map((u) =>
-      h('li', { class: 'row', style: { justifyContent: 'space-between' } },
-        h('div', null, h('b', null, u.name), h('div', { class: 't-sub' }, `${ROLE_LABELS[u.role]} · ${u.department}`)),
-        h('label', { class: 'check' },
-          h('input', { type: 'checkbox', checked: u.isAvailable, disabled: u.id === me.id, onchange: toggle(u) }), 'на месте')))));
+    h('h3', null, 'Сроки рассмотрения (SLA)'),
+    h('p', { class: 't-sub' }, 'В рабочих днях: выходные и праздники не считаются. У уже созданных обращений сроки не меняются.'),
+    h('form', { onsubmit: save },
+      h('table', { class: 'table sla-table' },
+        h('thead', null, h('tr', null, ['Приоритет', 'Первый ответ, дней', 'Решение, дней'].map((c) => h('th', null, c)))),
+        h('tbody', null, sla.map((item) => h('tr', null,
+          h('td', null, h('b', null, item.label)),
+          h('td', null, num(item, 'firstResponseDays')),
+          h('td', null, num(item, 'resolveDays')))))),
+      h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить сроки')));
 }
 
 export async function renderAdmin(el, { me, rerender, refreshMeta }) {
-  const [categories, users] = await Promise.all([get('/admin/categories'), get('/admin/users')]);
-  const staff = users.filter((u) => u.role !== 'employee');
+  const [categories, users, outbox, sla, templates, holidays, auditLog] = await Promise.all([
+    get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
+    get('/admin/templates'), get('/admin/holidays'), get('/admin/audit'),
+  ]);
+  const staff = users.filter((u) => u.role !== 'employee' && u.isActive);
   const reload = async () => { await refreshMeta(); rerender(); };
   mount(el,
     h('div', { class: 'page-head' },
-      h('div', null, h('h1', null, 'Настройки'), h('p', null, 'Справочник категорий, правила маршрутизации и замещение ответственных.'))),
-    h('div', { class: 'grid-2' }, categoriesCard(categories, staff, reload), usersCard(users, me, reload)));
+      h('div', null, h('h1', null, 'Настройки'), h('p', null, 'Категории и маршрутизация, пользователи, сроки, праздники, шаблоны ответов. Каждое изменение попадает в журнал.'))),
+    categoriesCard(categories, staff, reload),
+    usersAdminCard(users, me, reload),
+    h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload), holidaysCard(holidays, reload)),
+    templatesCard(templates, reload),
+    h('div', { class: 'an-grid admin-pair' }, outboxCard(outbox), auditCard(auditLog)));
 }

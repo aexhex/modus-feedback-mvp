@@ -19,13 +19,25 @@ function run(action, onDone) {
   };
 }
 
-function statusForm(t, onDone) {
-  const statusIn = h('select', null, options(t.permissions.allowedStatuses, { empty: 'Выберите новый статус' }));
+function statusForm(t, meta, onDone) {
+  const statusIn = h('select', { 'aria-label': 'Новый статус' }, options(t.permissions.allowedStatuses, { empty: 'Выберите новый статус' }));
   const commentIn = h('textarea', { rows: 3, placeholder: 'Комментарий для автора' });
   const resolutionIn = h('textarea', { rows: 3, placeholder: 'Что решено и что сделано' });
   const resolutionField = field('Результат рассмотрения', resolutionIn, 'Обязателен для итоговых статусов — автор увидит его');
   resolutionField.hidden = true;
   const hint = h('div', { class: 'field-hint' });
+  // Шаблон подставляет текст в комментарий или в результат — его можно дописать перед отправкой.
+  const templateIn = h('select', { 'aria-label': 'Шаблон ответа', onchange: () => {
+    const found = meta.templates.find((x) => String(x.id) === templateIn.value);
+    templateIn.value = '';
+    if (!found) return;
+    if (found.field === 'resolution') {
+      resolutionField.hidden = false;
+      resolutionIn.value = found.text;
+    } else {
+      commentIn.value = found.text;
+    }
+  } }, options(meta.templates.map((x) => ({ key: x.id, label: x.title })), { empty: 'Вставить шаблон ответа…' }));
   statusIn.addEventListener('change', () => {
     const s = statusIn.value;
     resolutionField.hidden = !FINAL.includes(s);
@@ -34,10 +46,13 @@ function statusForm(t, onDone) {
   });
   return h('form', { class: 'stack', onsubmit: run(async () => {
     if (!statusIn.value) throw new Error('Выберите статус');
-    await post(`/tickets/${t.id}/status`, { status: statusIn.value, comment: commentIn.value, resolution: resolutionIn.value });
+    await post(`/tickets/${t.id}/status`, {
+      status: statusIn.value, comment: commentIn.value,
+      resolution: FINAL.includes(statusIn.value) ? resolutionIn.value : '',
+    });
     toast('Статус обновлён, автор уведомлён', 'success');
   }, onDone) },
-  statusIn, hint, field('Комментарий', commentIn), resolutionField,
+  statusIn, hint, templateIn, field('Комментарий', commentIn), resolutionField,
   h('button', { class: 'btn btn-primary', type: 'submit' }, 'Применить'));
 }
 
@@ -65,14 +80,50 @@ function duplicateForm(t, onDone) {
   }, onDone) }, h('div', { style: { flex: '1' } }, code), h('button', { class: 'btn btn-sm', type: 'submit' }, 'Объединить'));
 }
 
+// ИМИТАЦИЯ интеграции: задача не уходит в Битрикс24, а записывается в журнал (см. «Настройки»).
+function taskBlock(t, onDone) {
+  if (t.b24Task) return h('p', { class: 'muted' }, t.b24Task.text);
+  if (!t.permissions.canCreateTask) return h('p', { class: 'muted' }, 'Доступно для обращений в работе.');
+  return h('form', { onsubmit: run(async () => {
+    await post(`/tickets/${t.id}/b24-task`);
+    toast('Задача создана (имитация) — запись в журнале Битрикс24', 'success');
+  }, onDone) }, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Создать задачу (имитация)'));
+}
+
+function inviteForm(t, meta, onDone) {
+  const taken = new Set([t.assignee?.id, ...t.watchers.map((w) => w.id)]);
+  const candidates = meta.staff.filter((u) => !taken.has(u.id)).map((u) => ({ key: u.id, label: u.name }));
+  const sel = h('select', { 'aria-label': 'Коллега' }, options(candidates, { empty: 'Выберите коллегу' }));
+  return h('form', { class: 'row', onsubmit: run(async () => {
+    if (!sel.value) throw new Error('Выберите коллегу');
+    await post(`/tickets/${t.id}/invite`, { userId: Number(sel.value) });
+    toast('Коллега приглашён в обсуждение', 'success');
+  }, onDone) }, h('div', { style: { flex: '1' } }, sel), h('button', { class: 'btn btn-sm', type: 'submit' }, 'Пригласить'));
+}
+
+// Отчёт о внедрении: что сделано и какой получен эффект. Публикуется на доске улучшений.
+function reportForm(t, onDone) {
+  const done = h('textarea', { rows: 2, maxlength: 3000, placeholder: 'Что именно сделано' }, t.report?.done ?? '');
+  const effect = h('textarea', { rows: 2, maxlength: 3000, placeholder: 'Что изменилось: время, ошибки, удобство' }, t.report?.effect ?? '');
+  return h('form', { class: 'stack', onsubmit: run(async () => {
+    await post(`/tickets/${t.id}/report`, { done: done.value, effect: effect.value });
+    toast('Отчёт о внедрении опубликован', 'success');
+  }, onDone) }, field('Что сделано', done), field('Эффект', effect),
+  h('button', { class: 'btn btn-sm', type: 'submit' }, t.report ? 'Обновить отчёт' : 'Опубликовать отчёт'));
+}
+
 export function processingCard(t, meta, onDone) {
   const p = t.permissions;
   if (!p.canProcess) return null;
   const open = !FINAL.includes(t.status);
   return h('section', { class: 'card stack' },
     h('h3', null, 'Рассмотрение'),
-    p.allowedStatuses.length ? statusForm(t, onDone) : h('p', { class: 'muted' }, 'Обращение закрыто.'),
+    t.isPublic && h('div', { class: 'callout' }, 'Обращение опубликовано в ленте идей: ваши ответы, результат и приложенные файлы видят все сотрудники. Для служебного используйте внутренние заметки.'),
+    p.allowedStatuses.length ? statusForm(t, meta, onDone) : h('p', { class: 'muted' }, 'Обращение закрыто.'),
     open && h('div', { class: 'stack' }, h('h3', null, 'Приоритет и SLA'), priorityForm(t, meta, onDone)),
     p.canReassign && h('div', { class: 'stack' }, h('h3', null, 'Ответственный'), assignForm(t, meta, onDone)),
+    p.canInvite && h('div', { class: 'stack' }, h('h3', null, 'Позвать коллегу'), inviteForm(t, meta, onDone)),
+    p.canReport && h('div', { class: 'stack' }, h('h3', null, 'Отчёт о внедрении'), reportForm(t, onDone)),
+    h('div', { class: 'stack' }, h('h3', null, 'Задача в Битрикс24'), taskBlock(t, onDone)),
     open && h('div', { class: 'stack' }, h('h3', null, 'Повторное обращение'), duplicateForm(t, onDone)));
 }

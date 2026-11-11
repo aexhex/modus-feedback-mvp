@@ -6,9 +6,11 @@
 
 const isOversight = (user) => user.role === 'manager' || user.role === 'admin';
 
-export function canView(user, ticket) {
+// Наблюдатель (приглашён в обсуждение или подписался) получает доступ на чтение и комментарии.
+// Обращение, которое автор опубликовал в ленте идей, могут читать и комментировать все сотрудники.
+export function canView(user, ticket, isWatcher = false) {
   if (isOversight(user)) return true;
-  if (ticket.author_id === user.id) return true;
+  if (ticket.author_id === user.id || isWatcher || ticket.is_public) return true;
   return user.role === 'handler' && ticket.assignee_id === user.id;
 }
 
@@ -30,7 +32,10 @@ export function canSeeAuthor(user, ticket) {
 export function listScope(user) {
   if (isOversight(user)) return { sql: '1=1', params: [] };
   if (user.role === 'handler') {
-    return { sql: '(t.author_id = ? OR t.assignee_id = ?)', params: [user.id, user.id] };
+    return {
+      sql: '(t.author_id = ? OR t.assignee_id = ? OR t.id IN (SELECT ticket_id FROM watchers WHERE user_id = ?))',
+      params: [user.id, user.id, user.id],
+    };
   }
   return { sql: 't.author_id = ?', params: [user.id] };
 }

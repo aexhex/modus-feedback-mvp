@@ -133,6 +133,7 @@ describe('создание и маршрутизация', () => {
     const handler = await app.as('Ответственный за процессы');
     const seen = (await handler.get(`/api/tickets/${created.id}`)).json.data;
     assert.equal(seen.author, null);
+    assert.equal(seen.department, null);
     assert.equal(seen.events[0].actorName, 'Автор (анонимно)');
   });
 
