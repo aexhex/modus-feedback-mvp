@@ -187,7 +187,8 @@ describe('сессии, имитация Битрикс24, анонимност�
     await handler.post(`/api/tickets/${created.id}/status`, { status: 'in_review', comment: 'Принято' });
     const admin = await app.as('Администратор системы');
     const entries = (await admin.get('/api/admin/outbox')).json.data.filter((o) => o.payload.LINK === `/#/t/${created.id}`);
-    assert.ok(entries.some((o) => o.recipient === 'Автор (анонимно)'));
+    assert.ok(entries.length > 0);
+    assert.ok(entries.every((o) => o.recipient === 'Получатель скрыт (анонимное обращение)'));
     assert.ok(!entries.some((o) => o.recipient === 'Сотрудник офиса'));
   });
 

@@ -129,3 +129,20 @@ export function filePicker({ multiple = false, onchange } = {}) {
     h('span', { class: 'btn btn-sm' }, icon('clip', 16), multiple ? 'Выбрать файлы' : 'Прикрепить файл'), names);
   return { el, input };
 }
+
+const PHOTO_MAX_SIDE = 1600;
+const PHOTO_QUALITY = 0.82;
+
+// Фото с телефона уменьшается до 1600 px по длинной стороне и сохраняется в JPEG:
+// так оно укладывается в лимит 5 МБ и быстро уходит даже по мобильной сети.
+export async function compressPhoto(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const dataUrl = canvas.toDataURL('image/jpeg', PHOTO_QUALITY);
+  return { dataUrl, dataBase64: dataUrl.split(',')[1] };
+}

@@ -37,7 +37,8 @@ function oversightBlock(o) {
         h('ul', { class: 'list-plain' }, o.repeatedTopics.map((t) =>
           h('li', { class: 'row home-between' }, h('b', null, t.category),
             h('span', { class: 't-sub' }, `обращений ${t.count} · поддержек ${t.supports}`)))),
-        h('a', { class: 'btn btn-sm home-more', href: '#/analytics' }, 'Вся аналитика'))),
+        h('div', { class: 'row home-more' }, h('a', { class: 'btn btn-sm', href: '#/analytics' }, 'Вся аналитика'),
+          h('a', { class: 'btn btn-sm', href: '#/digest' }, 'Сводка недели')))),
   ];
 }
 

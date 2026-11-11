@@ -9,7 +9,7 @@ const REASONS = Object.freeze({
 
 function availableUser(db, userId) {
   if (!userId) return null;
-  return db.prepare('SELECT id FROM users WHERE id = ? AND is_available = 1').get(userId) ?? null;
+  return db.prepare("SELECT id FROM users WHERE id = ? AND is_available = 1 AND is_active = 1 AND role != 'employee'").get(userId) ?? null;
 }
 
 /**
@@ -28,7 +28,7 @@ export function resolveAssignee(db, categoryId) {
     }
   }
   const dispatcher = db
-    .prepare("SELECT id FROM users WHERE role = 'manager' AND is_available = 1 ORDER BY id LIMIT 1")
+    .prepare("SELECT id FROM users WHERE role = 'manager' AND is_available = 1 AND is_active = 1 ORDER BY id LIMIT 1")
     .get();
   if (dispatcher) return { userId: dispatcher.id, reason: REASONS.dispatcher };
   return { userId: null, reason: REASONS.unassigned };

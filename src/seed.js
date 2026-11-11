@@ -112,6 +112,18 @@ function seedSurvey(db, users, nowIso) {
   insert.run(openId, 'Чего не хватает?', 'text', 1);
 }
 
+// Голоса за идеи из ленты (у каждого не больше 5, на идею — не больше 3, за свою — нельзя).
+function seedVotes(db, users, nowIso) {
+  const votes = [
+    ['Сотрудник офиса', 'A-020', 3], ['Сотрудник офиса', 'A-012', 2],
+    ['Сотрудник бухгалтерии', 'A-020', 2], ['Сотрудник бухгалтерии', 'A-014', 3],
+    ['Менеджер по продажам', 'A-014', 2], ['Менеджер по продажам', 'A-002', 1],
+    ['Сотрудник проектирования', 'A-010', 3],
+  ];
+  const insert = db.prepare('INSERT INTO idea_votes (ticket_id, user_id, count, created_at) SELECT id, ?, ?, ? FROM tickets WHERE code = ?');
+  votes.forEach(([name, code, count], i) => insert.run(users.get(name), count, addHours(nowIso, -30 + i), code));
+}
+
 // Вымышленные отзывы клиентов для демонстрации расчёта NPS.
 function seedClientFeedback(db, nowIso) {
   const rows = [
@@ -155,6 +167,7 @@ export function seedIfEmpty(db, nowIso) {
 
     // Предложения опубликованы в ленте идей; проблемы и отзыв остаются закрытыми для посторонних.
     db.exec("UPDATE tickets SET is_public = 1 WHERE type = 'idea'");
+    seedVotes(db, users, nowIso);
     seedSurvey(db, users, nowIso);
     seedClientFeedback(db, nowIso);
   });

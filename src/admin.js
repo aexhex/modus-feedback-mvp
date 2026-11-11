@@ -1,5 +1,10 @@
 // Администрирование: категории, правила маршрутизации, доступность ответственных.
 import { badRequest, notFound } from './http.js';
+import { FINAL_STATUSES } from './config.js';
+import { inTransaction } from './db.js';
+import { resolveAssignee } from './routing.js';
+import { addEvent } from './tickets-actions.js';
+import { notify } from './notifications.js';
 
 const CATEGORY_SELECT = `
 SELECT c.id, c.name, c.is_active AS isActive, c.assignee_id AS assigneeId, c.fallback_id AS fallbackId,
@@ -94,8 +99,24 @@ export function createUser(db, input) {
   return { id: Number(lastInsertRowid), name };
 }
 
+// Обращения отключённого (или переведённого в сотрудники) обработчика уходят следующему по правилу категории:
+// иначе они висели бы на человеке, который не может войти, а эскалации уходили бы в пустоту.
+function reassignOpenTickets(db, leaver, now) {
+  const open = db
+    .prepare(`SELECT id, code, title, category_id FROM tickets
+              WHERE assignee_id = ? AND status NOT IN (${FINAL_STATUSES.map((s) => `'${s}'`).join(',')})`)
+    .all(leaver.id);
+  for (const t of open) {
+    const { userId, reason } = resolveAssignee(db, t.category_id);
+    db.prepare('UPDATE tickets SET assignee_id = ?, updated_at = ? WHERE id = ?').run(userId, now, t.id);
+    addEvent(db, { ticketId: t.id, actorId: null, kind: 'assigned', body: `${leaver.name} больше не обрабатывает обращения. ${reason}`, at: now });
+    notify(db, { userIds: [userId], ticketId: t.id, actorId: null, now, text: `Вам передано обращение ${t.code}: ${t.title}` });
+  }
+  return open.length;
+}
+
 /** @returns {string} описание изменений для журнала действий */
-export function updateUser(db, actor, id, input) {
+export function updateUser(db, actor, id, input, now) {
   const current = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
   if (!current) throw notFound('Пользователь не найден');
   const next = {
@@ -119,15 +140,20 @@ export function updateUser(db, actor, id, input) {
   }
   // Отключённый пользователь одновременно снимается с маршрутизации и теряет активные сессии.
   const available = next.isActive ? next.isAvailable : 0;
-  db.prepare('UPDATE users SET name = ?, role = ?, department = ?, is_available = ?, is_active = ? WHERE id = ?')
-    .run(next.name, next.role, next.department, available, next.isActive, current.id);
-  if (!next.isActive) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id);
+  const leaves = (current.is_active && !next.isActive) || (current.role !== 'employee' && next.role === 'employee');
+  const moved = inTransaction(db, () => {
+    db.prepare('UPDATE users SET name = ?, role = ?, department = ?, is_available = ?, is_active = ? WHERE id = ?')
+      .run(next.name, next.role, next.department, available, next.isActive, current.id);
+    if (!next.isActive) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id);
+    return leaves ? reassignOpenTickets(db, { id: current.id, name: current.name }, now) : 0;
+  });
   const changes = [
     next.name !== current.name && `имя: ${next.name}`,
     next.role !== current.role && `роль: ${next.role}`,
     next.department !== current.department && `подразделение: ${next.department}`,
     available !== current.is_available && (available ? 'на месте' : 'отсутствует'),
     next.isActive !== current.is_active && (next.isActive ? 'включён' : 'отключён'),
+    moved > 0 && `переназначено обращений: ${moved}`,
   ].filter(Boolean);
   return `${current.name} — ${changes.join(', ') || 'без изменений'}`;
 }

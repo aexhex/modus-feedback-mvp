@@ -1,13 +1,16 @@
 import { expect } from '@playwright/test';
 
-// Демо-вход: при активной сессии сначала выходим, затем выбираем карточку пользователя.
+// Вход для тестов — через API (сам экран входа проверяется отдельным тестом в zpolish.spec.js).
 export async function loginAs(page, name) {
   await page.goto('/');
-  const switchRole = page.getByRole('button', { name: 'Сменить роль' });
-  const userCards = page.locator('.user-card');
-  await expect(switchRole.or(userCards.first())).toBeVisible();
-  if (await switchRole.isVisible()) await switchRole.click();
-  await userCards.filter({ has: page.getByText(name, { exact: true }) }).click();
+  await page.evaluate(async (wanted) => {
+    const users = (await (await fetch('/api/demo-users')).json()).data.users;
+    const user = users.find((u) => u.name === wanted);
+    if (!user) throw new Error(`Нет демо-пользователя «${wanted}»`);
+    await fetch('/api/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: user.id }) });
+  }, name);
+  await page.goto('/#/home');
+  await page.reload();
   await expect(page.locator('.user-chip b')).toHaveText(name);
 }
 

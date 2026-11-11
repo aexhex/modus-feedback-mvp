@@ -67,6 +67,7 @@ test('шаблон ответа и задача в Битрикс24 (имита�
   await page.getByLabel('Шаблон ответа').selectOption({ label: 'Принято в работу' });
   await expect(page.getByPlaceholder('Комментарий для автора')).toHaveValue(/Спасибо за обращение/);
 
+  await page.locator('.more-actions summary').click();
   await page.getByRole('button', { name: 'Создать задачу (имитация)' }).click();
   await expect(page.locator('.timeline')).toContainText('Создана задача в Битрикс24');
   await expect(page.getByRole('button', { name: 'Создать задачу (имитация)' })).toHaveCount(0);

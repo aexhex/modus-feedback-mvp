@@ -286,7 +286,9 @@ describe('фильтры, SLA, аналитика, доска', () => {
     const b = (await emp.get('/api/board')).json.data;
     assert.deepEqual(b.implemented.map((x) => x.code).sort(), ['A-004', 'A-008']);
     assert.ok(b.implemented.every((x) => !('author' in x)));
-    assert.equal(b.openIdeas[0].code, 'A-003');
+    // Открытые темы — только опубликованные идеи, по убыванию голосов (A-014 и A-020 по 5).
+    assert.ok(b.openIdeas.every((i) => !['A-003', 'A-007'].includes(i.code)));
+    assert.deepEqual(b.openIdeas.slice(0, 2).map((i) => i.code).sort(), ['A-014', 'A-020']);
   });
 
   it('справочники', async () => {
