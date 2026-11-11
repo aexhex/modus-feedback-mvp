@@ -1,5 +1,5 @@
 import { h, mount, toast, badge, slaChip, fmtRelative, options, debounce } from '../dom.js';
-import { getWithMeta, qs } from '../api.js';
+import { get, getWithMeta, qs } from '../api.js';
 
 const TITLES = {
   mine: ['Мои обращения', 'Всё, что вы отправили, и что с этим происходит сейчас.'],
@@ -7,7 +7,7 @@ const TITLES = {
   all: ['Все обращения', 'Полный реестр с фильтрами по подразделению, категории, статусу и срокам.'],
   feed: ['Лента идей', 'Обращения, которые авторы открыли для всех. Комментируйте и поддерживайте — так идея быстрее попадёт в работу.'],
 };
-const FILTER_KEYS = ['q', 'type', 'status', 'category', 'priority', 'department'];
+const FILTER_KEYS = ['q', 'type', 'status', 'category', 'priority', 'department', 'sort'];
 
 // Фильтры и страница хранятся в адресе: ссылкой на выборку можно поделиться.
 function readFilters(query) {
@@ -29,7 +29,8 @@ function scopeTabs(me, scope) {
 }
 
 function row(t, go) {
-  const sub = [t.category.name, t.department ?? 'анонимно', t.supportsCount ? `поддержали ${t.supportsCount}` : null];
+  const sub = [t.category.name, t.department ?? 'анонимно', t.supportsCount ? `поддержали ${t.supportsCount}` : null,
+    t.votesCount ? `голосов ${t.votesCount}` : null];
   return h('tr', { class: t.sla.overdue ? 'overdue' : '', onclick: () => go(`#/t/${t.id}`) },
     h('td', null, h('span', { class: 't-code' }, t.code)),
     h('td', null, h('div', { class: 't-title' }, t.title), h('div', { class: 't-sub' }, sub.filter(Boolean).join(' · '))),
@@ -55,6 +56,11 @@ export async function renderList(el, { me, meta, query, go }) {
   const isOversight = me.role === 'manager' || me.role === 'admin';
   let filters = readFilters(query);
   const results = h('div');
+  // В ленте сотрудник видит, сколько у него свободных голосов.
+  const votesBanner = h('div', { class: 'callout votes-banner' }, 'Голосуйте за идеи, которые важны вам: откройте идею и распределите голоса.');
+  if (scope === 'feed') {
+    get('/votes').then((v) => { votesBanner.textContent = `У вас ${v.left} свободных голосов из ${v.budget}. Откройте идею и отдайте ей до ${v.perIdea} голосов — популярные идеи руководитель видит первыми.`; }).catch(() => null);
+  }
   let requestSeq = 0;
   const exportLink = h('a', { class: 'btn', download: 'obrashcheniya.csv' }, 'Экспорт в Excel');
 
@@ -96,6 +102,7 @@ export async function renderList(el, { me, meta, query, go }) {
       h('div', null, h('h1', null, title), h('p', null, subtitle)),
       h('div', { class: 'row' }, exportLink, h('a', { class: 'btn btn-signal', href: '#/new' }, '+ Новое обращение'))),
     scopeTabs(me, scope),
+    scope === 'feed' && votesBanner,
     h('div', { class: 'filters' },
       h('input', { type: 'search', placeholder: 'Поиск по номеру, теме, тексту', value: filters.q, oninput: debounce(set('q'), 350) }),
       select('type', meta.types, 'Все типы'),
@@ -105,7 +112,9 @@ export async function renderList(el, { me, meta, query, go }) {
       isOversight
         ? select('department', meta.departments.map((d) => ({ key: d, label: d })), 'Все подразделения')
         : h('span'),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: filters.overdue, onchange: set('overdue') }), 'Только просроченные')),
+      scope === 'feed'
+        ? select('sort', [{ key: 'votes', label: 'Сначала популярные' }], 'Сначала новые')
+        : h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: filters.overdue, onchange: set('overdue') }), 'Только просроченные')),
     results);
   await load();
 }

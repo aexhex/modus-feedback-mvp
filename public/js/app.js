@@ -13,6 +13,7 @@ import { renderKanban } from './views/kanban.js';
 import { renderSurveys } from './views/surveys.js';
 import { renderClients, renderClientForm } from './views/clients.js';
 import { renderReport } from './views/report.js';
+import { renderDigest } from './views/digest.js';
 
 const NOTIFY_POLL_MS = 30_000;
 const root = document.getElementById('app');
@@ -33,6 +34,7 @@ const ROUTES = [
   { re: /^\/surveys(?:\/(\d+)(\/results)?)?$/, view: renderSurveys },
   { re: /^\/clients$/, view: renderClients, allow: isOversight },
   { re: /^\/report$/, view: renderReport, allow: isOversight },
+  { re: /^\/digest$/, view: renderDigest, allow: isOversight },
 ];
 
 function parseHash() {
@@ -69,6 +71,7 @@ function navItems(me) {
     { href: '#/board', label: 'Доска улучшений' },
     { href: '#/surveys', label: 'Опросы' },
     isOversight(me) && { href: '#/analytics', label: 'Аналитика' },
+    isOversight(me) && { href: '#/digest', label: 'Сводка недели' },
     isOversight(me) && { href: '#/clients', label: 'Отзывы клиентов' },
     me.role === 'admin' && { href: '#/admin', label: 'Настройки' },
   ].filter(Boolean);
@@ -100,7 +103,12 @@ function themeToggle() {
     class: 'btn btn-ghost', 'aria-label': 'Переключить светлую и тёмную тему', title: 'Светлая / тёмная тема',
     onclick: () => {
       const next = isDark() ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
+      // Смена темы мгновенная: без этого кнопки и карточки «доезжали» бы до новых цветов анимацией.
+      const rootEl = document.documentElement;
+      rootEl.classList.add('theme-switching');
+      rootEl.dataset.theme = next;
+      void rootEl.offsetWidth;
+      requestAnimationFrame(() => rootEl.classList.remove('theme-switching'));
       try {
         localStorage.setItem('theme', next);
       } catch {

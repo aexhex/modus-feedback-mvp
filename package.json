@@ -8,8 +8,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node server.js",
-    "reset": "node -e \"process.env.RESET='1'; import('./server.js')\"",
+    "start": "node -e \"process.env.DEMO_MODE ??= '1'; import('./server.js')\"",
+    "reset": "node -e \"process.env.RESET='1'; process.env.DEMO_MODE ??= '1'; import('./server.js')\"",
     "test": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js test/",
     "test:e2e": "playwright test",
     "screenshots": "playwright test --config playwright.screenshots.config.js"

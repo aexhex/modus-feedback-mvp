@@ -157,6 +157,13 @@ CREATE TABLE IF NOT EXISTS client_feedback (
   status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','processed')),
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS idea_votes (
+  ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  count INTEGER NOT NULL CHECK (count BETWEEN 1 AND 3),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (ticket_id, user_id)
+);
 CREATE TABLE IF NOT EXISTS feedback (
   ticket_id INTEGER PRIMARY KEY REFERENCES tickets(id),
   is_resolved INTEGER NOT NULL,
@@ -186,7 +193,9 @@ function ensureColumn(db, table, column, definition) {
 }
 
 // Выполняет fn в транзакции; при ошибке откатывает изменения.
+// Вложенный вызов присоединяется к уже открытой транзакции (нужно сбросу демо-данных).
 export function inTransaction(db, fn) {
+  if (db.isTransaction) return fn();
   db.exec('BEGIN');
   try {
     const result = fn();

@@ -1,6 +1,7 @@
 // Настройки, вынесенные из кода в интерфейс: шаблоны ответов, праздники, пользователи, журнал действий.
 import { h, toast, options } from '../dom.js';
 import { post, patch, del } from '../api.js';
+import { filePicker } from '../dom.js';
 
 const ROLE_OPTIONS = [
   { key: 'employee', label: 'Сотрудник' }, { key: 'handler', label: 'Ответственный' },
@@ -78,7 +79,32 @@ export function usersAdminCard(users, me, reload) {
       h('tbody', null, users.map(row)))),
     h('form', { class: 'row user-new', onsubmit: guarded(() => post('/admin/users', { name: name.value, role: role.value, department: department.value }), reload, 'Пользователь добавлен') },
       h('div', { class: 'grow' }, name), role, h('div', { class: 'grow' }, department),
-      h('button', { class: 'btn btn-primary', type: 'submit' }, 'Добавить пользователя')));
+      h('button', { class: 'btn btn-primary', type: 'submit' }, 'Добавить пользователя')),
+    importBlock(reload));
+}
+
+// Импорт из CSV (например, выгрузка оргструктуры из 1С): строки «имя;роль;подразделение».
+function importBlock(reload) {
+  const report = h('div', { class: 'import-report' });
+  const picker = filePicker({ onchange: async (input) => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      const result = await post('/admin/users/import', { csv: await file.text() });
+      toast(`Добавлено: ${result.created.length}, пропущено: ${result.skipped.length}`, result.skipped.length ? 'info' : 'success');
+      if (result.skipped.length === 0) { reload(); return; }
+      report.replaceChildren(
+        h('b', null, 'Не добавлены:'),
+        h('ul', { class: 'list-plain' }, result.skipped.map((s) => h('li', null, `Строка ${s.line}: ${s.name || '—'} — ${s.reason}`))),
+        h('button', { class: 'btn btn-sm', onclick: reload }, 'Обновить список'));
+    } catch (err) { toast(err.message, 'error'); }
+    input.value = '';
+  } });
+  picker.input.accept = '.csv,.txt';
+  return h('div', { class: 'stack user-import' },
+    h('h3', null, 'Импорт из CSV'),
+    h('p', { class: 't-sub' }, 'Строка файла: имя;роль;подразделение. Роль — сотрудник, ответственный, руководитель или администратор. Первая строка может быть заголовком; уже существующие имена пропускаются.'),
+    picker.el, report);
 }
 
 export function auditCard(entries) {

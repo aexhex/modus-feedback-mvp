@@ -33,10 +33,10 @@ export async function renderBoard(el) {
       h('p', { class: 't-sub' }, 'Анонимные обращения в рейтинге не участвуют.')),
     h('div', { class: 'page-head', style: { marginTop: '32px' } },
       h('div', null, h('h2', null, 'Открытые темы — поддержите коллег'),
-        h('p', null, 'Чем больше поддержки, тем выше тема в повестке руководителей.'))),
+        h('p', null, 'Идеи из ленты по числу голосов. Чем больше поддержки, тем выше тема в повестке руководителей.'))),
     h('div', { class: 'card' }, h('ul', { class: 'list-plain' }, openIdeas.map((i) =>
       h('li', { class: 'row', style: { justifyContent: 'space-between' } },
         h('div', null, h('span', { class: 't-code' }, i.code), ' ', h('b', null, i.title),
-          h('div', { class: 't-sub' }, `${i.category} · ${i.statusLabel} · поддержали ${i.supportsCount}`)),
+          h('div', { class: 't-sub' }, `${i.category} · ${i.statusLabel} · голосов ${i.votesCount} · поддержали ${i.supportsCount}`)),
         supportButton(i))))));
 }
