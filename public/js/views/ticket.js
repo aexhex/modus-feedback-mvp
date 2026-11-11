@@ -63,6 +63,29 @@ function attachmentsBlock(t, reload) {
     t.permissions.canAttach && h('div', { style: { marginTop: '10px' } }, picker.el));
 }
 
+// Голоса за идею: сотрудник распределяет ограниченный запас голосов между идеями из ленты.
+function votingCard(t, reload) {
+  const v = t.voting;
+  if (!v) return null;
+  const set = (count) => async () => {
+    try {
+      await post(`/tickets/${t.id}/vote`, { count });
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  return h('section', { class: 'card voting' },
+    h('h3', null, 'Голосование за идею'),
+    h('div', { class: 'row home-between' },
+      h('div', null, h('div', { class: 'kpi-value' }, String(t.votesCount)), h('div', { class: 'kpi-label' }, 'голосов у идеи')),
+      v.canVote && h('div', { class: 'vote-stepper', role: 'group', 'aria-label': 'Ваши голоса' },
+        h('button', { class: 'btn btn-sm', disabled: v.mine === 0, 'aria-label': 'Снять голос', onclick: set(v.mine - 1) }, '−'),
+        h('b', { class: 'vote-mine' }, String(v.mine)),
+        h('button', { class: 'btn btn-sm', disabled: v.mine >= v.perIdea || v.left === 0, 'aria-label': 'Добавить голос', onclick: set(v.mine + 1) }, '+'))),
+    h('p', { class: 't-sub' }, v.canVote
+      ? `Ваших голосов здесь: ${v.mine} из ${v.perIdea} возможных · свободно ${v.left} из ${v.budget}`
+      : 'Голосовать можно за чужие нерассмотренные идеи из ленты.'));
+}
+
 function factsCard(t, reload) {
   const supportBtn = t.permissions.canSupport && !['implemented', 'rejected', 'closed'].includes(t.status)
     && h('button', { class: 'btn btn-sm', onclick: async () => {
@@ -153,5 +176,5 @@ export async function renderTicket(el, { me, meta, params, rerender }) {
         h('section', { class: 'card' },
           h('h3', null, 'История и обсуждение'), timeline(t.events),
           t.permissions.canComment ? commentForm(t, me, reload) : h('p', { class: 'muted' }, 'Обращение закрыто — обсуждение завершено.'))),
-      h('div', null, factsCard(t, reload), processingCard(t, meta, reload))));
+      h('div', null, factsCard(t, reload), votingCard(t, reload), processingCard(t, meta, reload))));
 }

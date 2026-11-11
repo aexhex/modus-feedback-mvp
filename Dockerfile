@@ -2,6 +2,7 @@
 FROM node:24-alpine
 
 ENV NODE_ENV=production \
+    DEMO_MODE=0 \
     PORT=3000 \
     DB_PATH=/data/feedback.db
 

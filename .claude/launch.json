@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "feedback-mvp",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
       "port": 3000
     }
   ]

@@ -18,6 +18,10 @@ import { uploadAttachment, readAttachment } from './attachments.js';
 import { listNotifications, markAllRead, listOutbox } from './notifications.js';
 import { setWatching, inviteWatcher, createB24Task } from './collab.js';
 import { getSlaDays, setSla, listHolidays, setHolidays } from './settings.js';
+import { castVote, voteSummary } from './votes.js';
+import { buildDigest, sendDigest } from './digest.js';
+import { importUsers } from './user-import.js';
+import { resetDemo } from './demo-reset.js';
 import { audit, listAudit } from './audit.js';
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from './templates.js';
 import { saveReport, recognition } from './reports.js';
@@ -67,6 +71,7 @@ export function registerRoutes(router) {
     transitions: TRANSITIONS,
     templates: listTemplates(ctx.db),
     sla: getSlaDays(ctx.db),
+    demoMode: ctx.demoMode,
   }));
   add('GET', '/api/home', ({ ctx, user }) => buildHome(ctx.db, user, ctx.now()));
 
@@ -117,6 +122,8 @@ export function registerRoutes(router) {
   action('b24-task', createB24Task);
   action('report', saveReport);
   action('publish', setPublic);
+  action('vote', castVote);
+  add('GET', '/api/votes', ({ ctx, user }) => voteSummary(ctx.db, user.id));
 
   add('POST', '/api/tickets/:id/support', ({ ctx, user, params }) =>
     ({ supportsCount: supportTicket(ctx.db, user, params.id, ctx.now()) }), MUTATE);
@@ -135,6 +142,14 @@ export function registerRoutes(router) {
 
   // --- Прозрачность, аналитика, уведомления ---
   add('GET', '/api/board', ({ ctx }) => ({ ...improvementsBoard(ctx.db), ...recognition(ctx.db, ctx.now()) }));
+  add('GET', '/api/digest', ({ ctx, user }) => {
+    requireRole(canSeeAnalytics, user);
+    return buildDigest(ctx.db, ctx.now());
+  });
+  add('POST', '/api/digest/send', ({ ctx, user }) => {
+    requireRole(canSeeAnalytics, user);
+    return { recipients: sendDigest(ctx.db, ctx.now()) };
+  }, MUTATE);
   add('GET', '/api/report', ({ ctx, user, query }) => {
     requireRole(canSeeAnalytics, user);
     return buildReport(ctx.db, query, ctx.now());
@@ -234,10 +249,22 @@ export function registerRoutes(router) {
     return listUsers(ctx.db, { includeInactive: true });
   }, MUTATE);
   admin('PATCH', '/api/admin/users/:id', ({ ctx, user, params, body, log }) => {
-    log('Пользователь изменён', updateUser(ctx.db, user, params.id, body));
+    log('Пользователь изменён', updateUser(ctx.db, user, params.id, body, ctx.now()));
     return listUsers(ctx.db, { includeInactive: true });
   }, MUTATE);
 
+  admin('POST', '/api/admin/users/import', ({ ctx, body, log }) => {
+    const result = importUsers(ctx.db, body);
+    log('Импорт пользователей', `добавлено: ${result.created.length}, пропущено: ${result.skipped.length}`);
+    return { ...result, users: listUsers(ctx.db, { includeInactive: true }) };
+  }, { mutate: true, bodyLimit: 128 * 1024 });
+  // Сброс удаляет все сессии, поэтому администратор после него попадает на экран входа.
+  admin('POST', '/api/admin/demo-reset', ({ ctx, user, res }) => {
+    if (!ctx.demoMode) throw forbidden('Сброс данных доступен только в демо-режиме');
+    resetDemo(ctx.db, ctx.uploadsDir, user.name, ctx.now());
+    res.setHeader('Set-Cookie', cookie('', 0));
+    return { reset: true };
+  }, MUTATE);
   admin('GET', '/api/admin/outbox', ({ ctx }) => listOutbox(ctx.db));
   admin('GET', '/api/admin/audit', ({ ctx }) => listAudit(ctx.db));
 }

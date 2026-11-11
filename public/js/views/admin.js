@@ -78,7 +78,24 @@ function slaCard(sla, reload) {
       h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить сроки')));
 }
 
-export async function renderAdmin(el, { me, rerender, refreshMeta }) {
+// Сброс демо-данных: доступен только в демо-режиме, требует подтверждения и выводит всех из системы.
+function demoCard() {
+  const reset = async () => {
+    // eslint-disable-next-line no-alert -- нативное подтверждение для разрушительного действия
+    if (!window.confirm('Удалить все изменения и вернуть исходные демо-данные? Все пользователи будут выведены из системы.')) return;
+    try {
+      await post('/admin/demo-reset');
+      location.hash = '#/login';
+      location.reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  return h('section', { class: 'card demo-card' },
+    h('h3', null, 'Демо-режим'),
+    h('p', { class: 't-sub' }, 'Перед показом верните исходный датасет: удалятся созданные обращения, комментарии, файлы и изменения настроек. После сброса нужно войти заново.'),
+    h('button', { class: 'btn btn-danger', onclick: reset }, 'Сбросить демо-данные'));
+}
+
+export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
   const [categories, users, outbox, sla, templates, holidays, auditLog] = await Promise.all([
     get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
     get('/admin/templates'), get('/admin/holidays'), get('/admin/audit'),
@@ -88,6 +105,7 @@ export async function renderAdmin(el, { me, rerender, refreshMeta }) {
   mount(el,
     h('div', { class: 'page-head' },
       h('div', null, h('h1', null, 'Настройки'), h('p', null, 'Категории и маршрутизация, пользователи, сроки, праздники, шаблоны ответов. Каждое изменение попадает в журнал.'))),
+    meta.demoMode && demoCard(),
     categoriesCard(categories, staff, reload),
     usersAdminCard(users, me, reload),
     h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload), holidaysCard(holidays, reload)),

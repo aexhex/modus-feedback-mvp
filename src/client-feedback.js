@@ -33,7 +33,7 @@ export function submitClientFeedback(db, input, now) {
   return true;
 }
 
-function nps(scores) {
+export function npsOf(scores) {
   if (scores.length === 0) return { value: null, promoters: 0, passives: 0, detractors: 0, count: 0 };
   const promoters = scores.filter((s) => s >= PROMOTER_MIN).length;
   const detractors = scores.filter((s) => s <= DETRACTOR_MAX).length;
@@ -52,7 +52,7 @@ export function listClientFeedback(db, user) {
     )
     .all(LIST_LIMIT);
   const scores = db.prepare('SELECT score FROM client_feedback').all().map((r) => r.score);
-  return { items, nps: nps(scores) };
+  return { items, nps: npsOf(scores) };
 }
 
 export function markClientFeedback(db, user, id, input) {

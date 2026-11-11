@@ -1,4 +1,4 @@
-import { h, mount, toast, debounce, field, options, fileToBase64, filePicker } from '../dom.js';
+import { h, mount, toast, debounce, field, options, fileToBase64, filePicker, compressPhoto } from '../dom.js';
 import { get, post, qs } from '../api.js';
 
 const TYPE_HINTS = {
@@ -36,11 +36,43 @@ function similarPanel() {
   return { el: h('aside', { class: 'card sticky' }, h('h3', null, 'Похожие обращения'), body), update };
 }
 
-async function uploadFiles(ticketId, files) {
+async function uploadFiles(ticketId, files, photos) {
   for (const file of files) {
     const dataBase64 = await fileToBase64(file);
     await post(`/tickets/${ticketId}/attachments`, { name: file.name, dataBase64 });
   }
+  for (const photo of photos) {
+    await post(`/tickets/${ticketId}/attachments`, { name: photo.name, dataBase64: photo.dataBase64 });
+  }
+}
+
+// Фото с камеры телефона (на компьютере — выбор изображения): сжимается и показывается миниатюрой.
+function photoPicker() {
+  const photos = [];
+  const thumbs = h('div', { class: 'photo-thumbs' });
+  const redraw = () => thumbs.replaceChildren(...photos.map((p, i) => h('figure', { class: 'photo-thumb' },
+    h('img', { src: p.dataUrl, alt: `Фото ${i + 1}` }),
+    h('button', { type: 'button', class: 'photo-remove', 'aria-label': `Убрать фото ${i + 1}`, onclick: () => { photos.splice(i, 1); redraw(); } }, '×'))));
+  let pending = Promise.resolve();
+  const processFiles = async (files) => {
+    for (const file of files) {
+      try {
+        const { dataUrl, dataBase64 } = await compressPhoto(file);
+        photos.push({ name: `photo-${Date.now()}-${photos.length + 1}.jpg`, dataUrl, dataBase64 });
+      } catch {
+        toast(`Не удалось обработать фото ${file.name}`, 'error');
+      }
+    }
+    redraw();
+  };
+  const input = h('input', { type: 'file', accept: 'image/*', capture: 'environment', class: 'visually-hidden', onchange: () => {
+    const files = [...input.files];
+    input.value = '';
+    pending = pending.then(() => processFiles(files));
+  } });
+  const el = h('div', { class: 'photo-pick' },
+    h('label', { class: 'btn btn-sm photo-btn' }, input, '📷 Сделать фото'), thumbs);
+  return { el, photos, ready: () => pending };
 }
 
 export function renderNew(el, { me, meta, go, rerender }) {
@@ -56,6 +88,7 @@ export function renderNew(el, { me, meta, go, rerender }) {
   const anonIn = h('input', { type: 'checkbox' });
   const publicIn = h('input', { type: 'checkbox' });
   const files = filePicker({ multiple: true });
+  const camera = photoPicker();
   const solutionField = field('Предлагаемое решение', solutionIn);
   const submitBtn = h('button', { class: 'btn btn-signal', type: 'submit' }, 'Отправить обращение');
 
@@ -82,6 +115,7 @@ export function renderNew(el, { me, meta, go, rerender }) {
     e.preventDefault();
     submitBtn.disabled = true;
     try {
+      await camera.ready();
       const ticket = await post('/tickets', {
         type,
         categoryId: Number(categoryIn.value),
@@ -94,7 +128,7 @@ export function renderNew(el, { me, meta, go, rerender }) {
       });
       submitted = true;
       clearDraft();
-      await uploadFiles(ticket.id, [...files.input.files]).catch((err) => toast(`Обращение создано, но файл не загружен: ${err.message}`, 'error'));
+      await uploadFiles(ticket.id, [...files.input.files], camera.photos).catch((err) => toast(`Обращение создано, но файл не загружен: ${err.message}`, 'error'));
       toast(`Обращение ${ticket.code} зарегистрировано. Ответственный: ${ticket.assignee?.name ?? 'будет назначен'}`, 'success');
       go(`#/t/${ticket.id}`);
     } catch (err) {
@@ -161,8 +195,9 @@ export function renderNew(el, { me, meta, go, rerender }) {
         field('Описание', descIn),
         solutionField,
         field('Насколько срочно', priorityIn, `Срок первого ответа в рабочих днях: ${meta.sla.map((s) => `${s.label.toLowerCase()} — ${s.firstResponseDays}`).join(', ')}`),
-        h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Материалы'), files.el,
-          h('span', { class: 'field-hint' }, 'PDF, изображения, txt, docx, xlsx, csv — до 5 МБ каждый')),
+        h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Материалы'),
+          h('div', { class: 'row' }, camera.el, files.el),
+          h('span', { class: 'field-hint' }, 'Фото с камеры сжимается автоматически. Файлы: PDF, изображения, txt, docx, xlsx, csv — до 5 МБ каждый')),
         h('label', { class: 'check anon-box' }, anonIn,
           h('span', null, h('b', null, 'Подать анонимно'),
             h('div', { class: 'field-hint' }, 'Ваше имя и подразделение скрыты от всех, включая руководителей. Вы по-прежнему видите статус, получаете ответы и можете отвечать на уточнения в комментариях.'))),

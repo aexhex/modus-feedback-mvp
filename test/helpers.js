@@ -8,12 +8,12 @@ const silentLogger = { error: () => {} };
 // Среда, 12:00 по Москве — фиксированное «сейчас», чтобы расчёт рабочих дней SLA был детерминированным.
 export const TEST_NOW = '2026-11-11T09:00:00.000Z';
 
-export async function startTestApp() {
+export async function startTestApp(options = {}) {
   let current = TEST_NOW;
   const uploadsDir = mkdtempSync(join(tmpdir(), 'fb-test-'));
   const { server, db } = createApp({
     dbPath: ':memory:', uploadsDir, publicDir: join(import.meta.dirname, '..', 'public'), logger: silentLogger,
-    now: () => current, escalationIntervalMs: 0,
+    now: () => current, escalationIntervalMs: 0, ...options,
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -44,5 +44,5 @@ export async function startTestApp() {
   }
 
   const setNow = (iso) => { current = iso; };
-  return { base, db, as, userId, ticketId, request, setNow, close: () => new Promise((r) => server.close(r)) };
+  return { base, db, as, userId, ticketId, request, setNow, uploadsDir, close: () => new Promise((r) => server.close(r)) };
 }

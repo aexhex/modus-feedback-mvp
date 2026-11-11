@@ -5,7 +5,7 @@ const shot = (page, name) => page.screenshot({ path: `docs/screenshots/${name}.p
 
 test('снимки экранов для README', async ({ page }) => {
   await page.goto('/');
-  await page.locator('.user-card').first().waitFor();
+  await page.locator('.role-card').first().waitFor();
   await shot(page, '01-login');
 
   await loginAs(page, 'Сотрудник офиса');

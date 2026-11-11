@@ -43,7 +43,7 @@ test('тёмная тема включается и сохраняется по�
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(15, 22, 38)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(11, 26, 43)');
 });
 
 test('черновик обращения восстанавливается и очищается', async ({ page }) => {
@@ -67,6 +67,7 @@ test('шаблон ответа и задача в Битрикс24 (имита�
   await page.getByLabel('Шаблон ответа').selectOption({ label: 'Принято в работу' });
   await expect(page.getByPlaceholder('Комментарий для автора')).toHaveValue(/Спасибо за обращение/);
 
+  await page.locator('.more-actions summary').click();
   await page.getByRole('button', { name: 'Создать задачу (имитация)' }).click();
   await expect(page.locator('.timeline')).toContainText('Создана задача в Битрикс24');
   await expect(page.getByRole('button', { name: 'Создать задачу (имитация)' })).toHaveCount(0);
