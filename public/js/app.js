@@ -103,7 +103,12 @@ function themeToggle() {
     class: 'btn btn-ghost', 'aria-label': 'Переключить светлую и тёмную тему', title: 'Светлая / тёмная тема',
     onclick: () => {
       const next = isDark() ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
+      // Смена темы мгновенная: без этого кнопки и карточки «доезжали» бы до новых цветов анимацией.
+      const rootEl = document.documentElement;
+      rootEl.classList.add('theme-switching');
+      rootEl.dataset.theme = next;
+      void rootEl.offsetWidth;
+      requestAnimationFrame(() => rootEl.classList.remove('theme-switching'));
       try {
         localStorage.setItem('theme', next);
       } catch {

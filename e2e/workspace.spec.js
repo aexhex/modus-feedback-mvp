@@ -43,7 +43,7 @@ test('тёмная тема включается и сохраняется по�
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(15, 22, 38)');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(11, 26, 43)');
 });
 
 test('черновик обращения восстанавливается и очищается', async ({ page }) => {
