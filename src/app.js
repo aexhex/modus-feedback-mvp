@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { join, normalize, extname, sep } from 'node:path';
 import { openDatabase } from './db.js';
 import { seedIfEmpty } from './seed.js';
+import { seedTemplates } from './templates.js';
 import { registerRoutes } from './routes.js';
 import { userByToken } from './auth.js';
 import { LIMITS, SESSION_COOKIE, ESCALATION_INTERVAL_MS } from './config.js';
@@ -23,6 +24,10 @@ const MIME = {
 function createRateLimiter(limitPerMinute) {
   const windows = new Map();
   return (key, nowMs) => {
+    // Истёкшие окна удаляются, чтобы счётчик не рос бесконечно при потоке запросов с разных адресов.
+    if (windows.size > LIMITS.rateLimiterKeysMax) {
+      for (const [k, w] of windows) if (nowMs - w.start > 60_000) windows.delete(k);
+    }
     const current = windows.get(key);
     if (!current || nowMs - current.start > 60_000) {
       windows.set(key, { start: nowMs, count: 1 });
@@ -57,11 +62,14 @@ export function createApp({
 }) {
   const db = openDatabase(dbPath);
   if (seed) seedIfEmpty(db, now());
+  seedTemplates(db);
   escalateOverdue(db, now());
   const ctx = { db, uploadsDir, now };
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);
+  // Публичная форма без входа ограничена строже и по адресу отправителя.
+  const allowPublicPost = createRateLimiter(LIMITS.publicPostsPerMinute);
 
   async function handleApi(req, res, url) {
     const route = router.match(req.method, url.pathname);
@@ -69,6 +77,9 @@ export function createApp({
     const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
     const user = userByToken(db, token, now());
     if (!route.options.public && !user) return fail(res, 401, 'Требуется вход');
+    if (route.options.strict && !allowPublicPost(req.socket.remoteAddress, Date.now())) {
+      return fail(res, 429, 'Слишком много отправок, повторите через минуту');
+    }
     if (route.options.mutate && !allowMutation(user?.id ?? req.socket.remoteAddress, Date.now())) {
       return fail(res, 429, 'Слишком много запросов, повторите через минуту');
     }

@@ -11,7 +11,13 @@ export async function loginAs(page, name) {
   await expect(page.locator('.user-chip b')).toHaveText(name);
 }
 
+// Открывает карточку по номеру: id берём через API от имени текущего пользователя (с учётом его прав).
 export async function openTicket(page, code) {
-  await page.locator('tbody tr', { hasText: code }).click();
+  const id = await page.evaluate(async (q) => {
+    const res = await fetch('/api/tickets?limit=1&q=' + encodeURIComponent(q));
+    return (await res.json()).data[0]?.id ?? null;
+  }, code);
+  expect(id, 'обращение ' + code + ' доступно пользователю').not.toBeNull();
+  await page.goto('/#/t/' + id);
   await expect(page.locator('.t-head .t-code')).toHaveText(code);
 }

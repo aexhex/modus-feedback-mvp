@@ -36,13 +36,15 @@ const COLUMNS = [
 ];
 
 /** @returns {string} CSV-файл с учётом прав пользователя и выбранных фильтров */
-export function exportTicketsCsv(db, user, query, nowIso) {
-  const { items } = listTickets(db, user, { ...query, page: 1, limit: LIMITS.exportMax }, nowIso, {
-    maxLimit: LIMITS.exportMax,
+export function exportTicketsCsv(db, user, query, nowIso, { maxRows = LIMITS.exportMax } = {}) {
+  const { items, total } = listTickets(db, user, { ...query, page: 1, limit: maxRows }, nowIso, {
+    maxLimit: maxRows,
   });
   const lines = [
     COLUMNS.map(([title]) => cell(title)).join(';'),
     ...items.map((t) => COLUMNS.map(([, pick]) => cell(pick(t))).join(';')),
+    // Файл не должен молча обрываться: если строк больше предела, последняя строка об этом говорит.
+    ...(total > items.length ? [cell(`Показаны первые ${items.length} из ${total} обращений. Уточните фильтры, чтобы выгрузить остальные.`)] : []),
   ];
   return BOM + lines.join('\r\n') + '\r\n';
 }

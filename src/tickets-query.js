@@ -5,6 +5,7 @@ import {
 import { canView, canProcess, canReassign, canSeeAuthor, listScope } from './access.js';
 import { notFound } from './http.js';
 import { findSimilar } from './similarity.js';
+import { getReport, canReport } from './reports.js';
 
 export const BASE_SELECT = `
 SELECT t.*, c.name AS category_name, a.name AS author_name, s.name AS assignee_name,
@@ -45,6 +46,7 @@ export function serializeTicket(row, user, nowIso) {
     status: row.status,
     statusLabel: STATUSES[row.status],
     isAnonymous: Boolean(row.is_anonymous),
+    isPublic: Boolean(row.is_public),
     author: canSeeAuthor(user, row) ? { id: row.author_id, name: row.author_name } : null,
     // У анонимного обращения подразделение скрыто так же, как автор (остаётся только в сводной аналитике).
     department: canSeeAuthor(user, row) ? row.department : null,
@@ -71,8 +73,16 @@ export function getTicketRow(db, id) {
 // Доступ к чужому обращению отдаём как 404, чтобы не раскрывать его существование.
 export function getVisibleTicketRow(db, user, id) {
   const row = getTicketRow(db, id);
-  if (!canView(user, row)) throw notFound('Обращение не найдено');
+  if (!canView(user, row, isWatching(db, row.id, user.id))) throw notFound('Обращение не найдено');
   return row;
+}
+
+export function isWatching(db, ticketId, userId) {
+  return Boolean(db.prepare('SELECT 1 FROM watchers WHERE ticket_id = ? AND user_id = ?').get(ticketId, userId));
+}
+
+export function watcherIds(db, ticketId) {
+  return db.prepare('SELECT user_id FROM watchers WHERE ticket_id = ?').all(ticketId).map((r) => r.user_id);
 }
 
 const FILTERS = [
@@ -91,7 +101,8 @@ function clampInt(value, fallback, min, max) {
 }
 
 function buildWhere(user, query, nowIso) {
-  const scope = listScope(user);
+  // Лента идей — опубликованные обращения, одинаково для всех ролей.
+  const scope = query.scope === 'feed' ? { sql: 't.is_public = 1', params: [] } : listScope(user);
   const where = [scope.sql];
   const params = [...scope.params];
   if (query.scope === 'mine') {
@@ -116,6 +127,8 @@ function buildWhere(user, query, nowIso) {
     where.push(OVERDUE_SQL);
     params.push(nowIso, nowIso);
   }
+  if (query.open === '1') where.push(`t.status NOT IN (${FINAL_STATUSES.map((s) => `'${s}'`).join(',')})`);
+  if (query.notClosed === '1') where.push("t.status != 'closed'");
   return { sql: where.join(' AND '), params };
 }
 
@@ -177,11 +190,22 @@ export function getTicketDetail(db, user, id, nowIso) {
   const feedback = db
     .prepare('SELECT is_resolved, comment, created_at FROM feedback WHERE ticket_id = ?')
     .get(row.id);
+  const watching = isWatching(db, row.id, user.id);
+  const watchers = db
+    .prepare('SELECT u.id, u.name FROM watchers w JOIN users u ON u.id = w.user_id WHERE w.ticket_id = ? ORDER BY u.name')
+    .all(row.id);
+  const taskEvent = db
+    .prepare("SELECT body, created_at FROM events WHERE ticket_id = ? AND kind = 'b24_task' ORDER BY id LIMIT 1")
+    .get(row.id);
   return {
     ...serializeTicket(row, user, nowIso),
     duplicateOf,
     events,
     attachments,
+    watchers,
+    isWatching: watching,
+    b24Task: taskEvent ? { text: taskEvent.body, createdAt: taskEvent.created_at } : null,
+    report: getReport(db, row.id),
     feedback: feedback
       ? { isResolved: Boolean(feedback.is_resolved), comment: feedback.comment, createdAt: feedback.created_at }
       : null,
@@ -191,6 +215,12 @@ export function getTicketDetail(db, user, id, nowIso) {
       canReassign: canReassign(user),
       canComment: row.status !== 'closed',
       canSupport: row.author_id !== user.id && !supported,
+      canWatch: row.author_id !== user.id && row.assignee_id !== user.id,
+      canInvite: processor && row.status !== 'closed',
+      canCreateTask: processor && !isFinal(row.status) && !taskEvent,
+      canReport: processor && canReport(db, row.id),
+      canAttach: row.status !== 'closed' && (processor || row.author_id === user.id),
+      canPublish: processor || row.author_id === user.id,
       allowedStatuses: processor
         ? TRANSITIONS[row.status].map((key) => ({ key, label: STATUSES[key] }))
         : [],
@@ -202,7 +232,7 @@ export function getTicketDetail(db, user, id, nowIso) {
 export function similarTickets(db, user, text) {
   const candidates = db
     .prepare(
-      `SELECT t.id, t.code, t.title, t.description, t.status, t.author_id, t.assignee_id,
+      `SELECT t.id, t.code, t.title, t.description, t.status, t.author_id, t.assignee_id, t.is_public,
               c.name AS category_name,
               (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supports_count
        FROM tickets t JOIN categories c ON c.id = t.category_id
@@ -221,7 +251,7 @@ export function similarTickets(db, user, text) {
       statusLabel: STATUSES[c.status],
       supportsCount: c.supports_count,
       score: Math.round(score * 100) / 100,
-      canOpen: canView(user, c),
+      canOpen: canView(user, c, isWatching(db, c.id, user.id)),
       isOwn: c.author_id === user.id,
     };
   });
@@ -232,8 +262,10 @@ export function improvementsBoard(db) {
   const implemented = db
     .prepare(
       `SELECT t.id, t.code, t.title, t.resolution, t.resolved_at AS resolvedAt, c.name AS category,
+              r.done AS reportDone, r.effect AS reportEffect,
               (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supportsCount
        FROM tickets t JOIN categories c ON c.id = t.category_id
+       LEFT JOIN impl_reports r ON r.ticket_id = t.id
        WHERE t.status = 'implemented'
           OR (t.status = 'closed' AND t.type != 'praise' AND t.duplicate_of IS NULL
               AND EXISTS (SELECT 1 FROM events e WHERE e.ticket_id = t.id AND e.to_status = 'implemented'))

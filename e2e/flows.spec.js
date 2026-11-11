@@ -43,6 +43,7 @@ test('автор видит мотивированный отказ и оцен�
 
 test('руководитель: просроченные, фильтр в адресе, экспорт, аналитика', async ({ page }) => {
   await loginAs(page, 'Директор по развитию');
+  await page.getByRole('link', { name: 'Все обращения' }).click();
   await page.getByLabel('Только просроченные').check();
   await expect(page.locator('tbody tr')).toHaveCount(4);
   await expect(page).toHaveURL(/overdue=1/);
@@ -64,6 +65,7 @@ test('руководитель: просроченные, фильтр в адр
 
 test('постраничный вывод реестра', async ({ page }) => {
   await loginAs(page, 'Директор по развитию');
+  await page.getByRole('link', { name: 'Все обращения' }).click();
   await expect(page.locator('.pager')).toContainText('Страница 1 из 2');
   await page.getByRole('button', { name: 'Вперёд →' }).click();
   await expect(page.locator('.pager')).toContainText('Страница 2 из 2');
