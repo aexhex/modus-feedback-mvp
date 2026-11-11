@@ -20,7 +20,8 @@ export async function renderLogin(root, { onLogin }) {
         h('p', { class: 'login-note' },
           'Демо-вход без пароля: выберите роль, чтобы пройти сценарий от её лица. ',
           'В промышленной версии вход выполняется через корпоративную учётную запись (SSO Битрикс24). ',
-          'Все данные синтетические.')),
+          'Все данные синтетические. ',
+          h('a', { href: '#/client' }, 'Форма отзыва для клиентов →'))),
       groups.map(({ role, users: list }) =>
         h('section', { class: 'role-group' },
           h('h3', null, `${roles[role]} — ${ROLE_HINTS[role]}`),

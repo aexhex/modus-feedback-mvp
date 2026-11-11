@@ -25,6 +25,14 @@ export async function api(method, path, body) {
 }
 
 export const get = (path) => api('GET', path);
+
+// Для постраничных списков: данные вместе с метаданными { total, page, limit }.
+export async function getWithMeta(path) {
+  const res = await fetch(`/api${path}`, { credentials: 'same-origin' }).catch(() => null);
+  const payload = res ? await res.json().catch(() => null) : null;
+  if (!payload?.ok) throw new ApiError(res?.status ?? 0, payload?.error ?? 'Нет связи с сервером');
+  return { data: payload.data, meta: payload.meta };
+}
 export const post = (path, body = {}) => api('POST', path, body);
 export const patch = (path, body = {}) => api('PATCH', path, body);
 export const del = (path) => api('DELETE', path);

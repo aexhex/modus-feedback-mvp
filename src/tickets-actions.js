@@ -1,13 +1,14 @@
 // Изменение обращений: создание, статусы, комментарии, назначение, поддержка, дубликаты.
 import {
-  TYPES, PRIORITIES, STATUSES, TRANSITIONS, SLA_HOURS, LIMITS, addHours,
+  TYPES, PRIORITIES, STATUSES, TRANSITIONS, LIMITS, addBusinessHours,
 } from './config.js';
 import { canProcess, canReassign } from './access.js';
 import { badRequest, forbidden } from './http.js';
 import { inTransaction } from './db.js';
 import { resolveAssignee } from './routing.js';
 import { notify } from './notifications.js';
-import { getTicketRow, getVisibleTicketRow, isFinal } from './tickets-query.js';
+import { getTicketRow, getVisibleTicketRow, isFinal, watcherIds } from './tickets-query.js';
+import { getSla, getHolidays } from './settings.js';
 
 function text(value, { field, min = 0, max, required = false }) {
   const str = typeof value === 'string' ? value.trim() : '';
@@ -53,6 +54,7 @@ export function validateNewTicket(db, input) {
     proposedSolution: text(input.proposedSolution, { field: 'Предлагаемое решение', max: LIMITS.solutionMax }) || null,
     priority: input.priority ? oneOf(input.priority, PRIORITIES, 'Приоритет') : 'medium',
     isAnonymous: input.isAnonymous === true,
+    isPublic: input.isPublic === true,
   };
 }
 
@@ -60,18 +62,19 @@ export function createTicket(db, user, input, now) {
   const data = validateNewTicket(db, input);
   return inTransaction(db, () => {
     const code = nextCode(db);
-    const sla = SLA_HOURS[data.priority];
+    const sla = getSla(db)[data.priority];
+    const holidays = getHolidays(db);
     const assignment = resolveAssignee(db, data.categoryId);
     const { lastInsertRowid } = db
       .prepare(
         `INSERT INTO tickets (code, type, category_id, title, description, proposed_solution, priority, status,
-           author_id, is_anonymous, department, assignee_id, created_at, updated_at, first_response_due, due_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?)`,
+           author_id, is_anonymous, is_public, department, assignee_id, created_at, updated_at, first_response_due, due_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         code, data.type, data.categoryId, data.title, data.description, data.proposedSolution, data.priority,
-        user.id, data.isAnonymous ? 1 : 0, user.department, assignment.userId, now, now,
-        addHours(now, sla.firstResponse), addHours(now, sla.resolve),
+        user.id, data.isAnonymous ? 1 : 0, data.isPublic ? 1 : 0, user.department, assignment.userId, now, now,
+        addBusinessHours(now, sla.firstResponse, holidays), addBusinessHours(now, sla.resolve, holidays),
       );
     const ticketId = Number(lastInsertRowid);
     addEvent(db, { ticketId, actorId: user.id, kind: 'created', to: 'new', at: now });
@@ -93,7 +96,11 @@ export function changeStatus(db, user, id, input, now) {
   }
   const comment = text(input.comment, { field: 'Комментарий', max: LIMITS.commentMax });
   const resolutionInput = text(input.resolution, { field: 'Результат', max: LIMITS.solutionMax });
-  const resolution = resolutionInput || row.resolution;
+  // Прежний результат относится к прошлому итогу: при повторном открытии он снимается (остаётся в истории),
+  // а новый итог требует нового результата. Переход «итог → закрыто» использует уже записанный.
+  const reopening = isFinal(row.status) && !isFinal(target);
+  const kept = reopening ? null : row.resolution;
+  const resolution = isFinal(target) ? (resolutionInput || kept) : kept;
   if (isFinal(target) && !resolution) {
     throw badRequest('Для итогового статуса зафиксируйте результат рассмотрения');
   }
@@ -107,10 +114,20 @@ export function changeStatus(db, user, id, input, now) {
     ).run(target, resolution, now, now, isFinal(target) ? (row.resolved_at ?? now) : null, row.id);
     addEvent(db, {
       ticketId: row.id, actorId: user.id, kind: 'status', from: row.status, to: target,
-      body: [comment, resolutionInput && `Результат: ${resolutionInput}`].filter(Boolean).join('\n') || null,
+      body: [comment, isFinal(target) && resolutionInput && `Результат: ${resolutionInput}`].filter(Boolean).join('\n') || null,
       at: now,
     });
-    const recipients = isFinal(target) ? [row.author_id, ...supporterIds(db, row.id)] : [row.author_id];
+    // Повторное открытие: прежняя оценка автора относилась к старому итогу и больше не действует.
+    if (isFinal(row.status) && !isFinal(target)) {
+      const { changes } = db.prepare('DELETE FROM feedback WHERE ticket_id = ?').run(row.id);
+      if (changes > 0) {
+        addEvent(db, { ticketId: row.id, actorId: null, kind: 'feedback', body: 'Обращение открыто повторно — прежняя оценка автора сброшена', at: now });
+      }
+    }
+    const followers = watcherIds(db, row.id);
+    const recipients = isFinal(target)
+      ? [row.author_id, ...supporterIds(db, row.id), ...followers]
+      : [row.author_id, ...followers];
     notify(db, {
       userIds: recipients, ticketId: row.id, actorId: user.id, now,
       text: `${row.code}: статус изменён на «${STATUSES[target]}»`,
@@ -141,7 +158,9 @@ export function addComment(db, user, id, input, now) {
     } else {
       db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?').run(now, row.id);
     }
-    const recipients = isAuthor || internal ? [row.assignee_id] : [row.author_id];
+    // Внутренние заметки наблюдателям не уходят: они их не видят.
+    const direct = isAuthor || internal ? [row.assignee_id] : [row.author_id, row.assignee_id];
+    const recipients = internal ? direct : [...direct, ...watcherIds(db, row.id)];
     notify(db, {
       userIds: recipients, ticketId: row.id, actorId: user.id, now,
       text: `${row.code}: новый комментарий`,
@@ -153,7 +172,7 @@ export function reassign(db, user, id, input, now) {
   if (!canReassign(user)) throw forbidden('Переназначать может только руководитель');
   const row = getTicketRow(db, id);
   const target = db
-    .prepare("SELECT id, name FROM users WHERE id = ? AND role IN ('handler','manager','admin')")
+    .prepare("SELECT id, name FROM users WHERE id = ? AND role IN ('handler','manager','admin') AND is_active = 1")
     .get(Number(input.assigneeId));
   if (!target) throw badRequest('Выберите ответственного');
   const reason = text(input.reason, { field: 'Причина', max: 500 });
@@ -174,11 +193,15 @@ export function setPriority(db, user, id, input, now) {
   const row = getVisibleTicketRow(db, user, id);
   if (!canProcess(user, row)) throw forbidden();
   const priority = oneOf(input.priority, PRIORITIES, 'Приоритет');
-  const sla = SLA_HOURS[priority];
+  const sla = getSla(db)[priority];
+  const holidays = getHolidays(db);
   inTransaction(db, () => {
     db.prepare(
       'UPDATE tickets SET priority = ?, first_response_due = ?, due_at = ?, updated_at = ? WHERE id = ?',
-    ).run(priority, addHours(row.created_at, sla.firstResponse), addHours(row.created_at, sla.resolve), now, row.id);
+    ).run(
+      priority, addBusinessHours(row.created_at, sla.firstResponse, holidays),
+      addBusinessHours(row.created_at, sla.resolve, holidays), now, row.id,
+    );
     addEvent(db, {
       ticketId: row.id, actorId: user.id, kind: 'priority',
       body: `Приоритет: ${PRIORITIES[row.priority]} → ${PRIORITIES[priority]}. Сроки SLA пересчитаны`, at: now,
@@ -219,6 +242,47 @@ export function markDuplicate(db, user, id, input, now) {
     notify(db, {
       userIds: [row.author_id], ticketId: row.id, actorId: user.id, now,
       text: `${row.code} объединено с ${original.code} — вы будете получать уведомления по нему`,
+    });
+  });
+}
+
+// Оценка результата автором: «решено / не решено» после итогового статуса (один раз).
+export function rateTicket(db, user, id, input, now) {
+  const row = getVisibleTicketRow(db, user, id);
+  if (row.author_id !== user.id) throw forbidden('Оценить результат может только автор');
+  if (!isFinal(row.status) || row.duplicate_of) throw badRequest('Оценка доступна после итогового решения');
+  if (typeof input.isResolved !== 'boolean') throw badRequest('Укажите, решён ли вопрос');
+  const comment = text(input.comment, { field: 'Комментарий', max: LIMITS.commentMax }) || null;
+  if (db.prepare('SELECT 1 FROM feedback WHERE ticket_id = ?').get(row.id)) {
+    throw badRequest('Оценка уже оставлена');
+  }
+  inTransaction(db, () => {
+    db.prepare('INSERT INTO feedback (ticket_id, is_resolved, comment, created_at) VALUES (?, ?, ?, ?)')
+      .run(row.id, input.isResolved ? 1 : 0, comment, now);
+    const verdict = input.isResolved ? 'вопрос решён' : 'вопрос НЕ решён';
+    addEvent(db, {
+      ticketId: row.id, actorId: user.id, kind: 'feedback', at: now,
+      body: `Оценка автора: ${verdict}${comment ? `\n${comment}` : ''}`,
+    });
+    notify(db, {
+      userIds: [row.assignee_id], ticketId: row.id, actorId: user.id, now,
+      text: `${row.code}: автор оценил результат — ${verdict}`,
+    });
+  });
+}
+
+// Публикацию в ленте идей можно включить и отменить: автор — своё решение, обработчик — если в переписке
+// появилось то, что не предназначено всем сотрудникам.
+export function setPublic(db, user, id, input, now) {
+  const row = getVisibleTicketRow(db, user, id);
+  if (row.author_id !== user.id && !canProcess(user, row)) throw forbidden('Публикацией управляют автор и ответственный');
+  if (typeof input.isPublic !== 'boolean') throw badRequest('Ожидается isPublic: true/false');
+  if (Boolean(row.is_public) === input.isPublic) return;
+  inTransaction(db, () => {
+    db.prepare('UPDATE tickets SET is_public = ?, updated_at = ? WHERE id = ?').run(input.isPublic ? 1 : 0, now, row.id);
+    addEvent(db, {
+      ticketId: row.id, actorId: user.id, kind: 'publish', at: now,
+      body: input.isPublic ? 'Обращение опубликовано в ленте идей' : 'Обращение убрано из ленты идей',
     });
   });
 }

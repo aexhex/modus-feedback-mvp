@@ -81,6 +81,88 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+CREATE TABLE IF NOT EXISTS escalations (
+  ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+  kind TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (ticket_id, kind)
+);
+CREATE TABLE IF NOT EXISTS outbox (
+  id INTEGER PRIMARY KEY,
+  channel TEXT NOT NULL,
+  method TEXT NOT NULL,
+  recipient TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS watchers (
+  ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (ticket_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS impl_reports (
+  ticket_id INTEGER PRIMARY KEY REFERENCES tickets(id),
+  done TEXT NOT NULL,
+  effect TEXT NOT NULL,
+  author_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reply_templates (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  field TEXT NOT NULL CHECK (field IN ('comment','resolution')),
+  text TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY,
+  actor_id INTEGER REFERENCES users(id),
+  action TEXT NOT NULL,
+  details TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS surveys (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  is_open INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS survey_questions (
+  id INTEGER PRIMARY KEY,
+  survey_id INTEGER NOT NULL REFERENCES surveys(id),
+  text TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('scale','text')),
+  position INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS survey_answers (
+  question_id INTEGER NOT NULL REFERENCES survey_questions(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  value TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (question_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS client_feedback (
+  id INTEGER PRIMARY KEY,
+  name TEXT,
+  company TEXT,
+  contact TEXT,
+  score INTEGER NOT NULL CHECK (score BETWEEN 0 AND 10),
+  message TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','processed')),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS feedback (
+  ticket_id INTEGER PRIMARY KEY REFERENCES tickets(id),
+  is_resolved INTEGER NOT NULL,
+  comment TEXT,
+  created_at TEXT NOT NULL
+);
 `;
 
 export function openDatabase(path) {
@@ -88,7 +170,19 @@ export function openDatabase(path) {
   db.exec('PRAGMA foreign_keys = ON;');
   if (path !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  // Миграция баз, созданных до появления повторных напоминаний об эскалации.
+  ensureColumn(db, 'escalations', 'last_at', 'TEXT');
+  ensureColumn(db, 'escalations', 'count', 'INTEGER NOT NULL DEFAULT 1');
+  // Лента идей и управление пользователями появились позже первой версии схемы.
+  ensureColumn(db, 'tickets', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'users', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
   return db;
+}
+
+// Имена таблицы и столбца задаются только из кода (не из пользовательского ввода).
+function ensureColumn(db, table, column, definition) {
+  const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 // Выполняет fn в транзакции; при ошибке откатывает изменения.

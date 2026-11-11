@@ -27,8 +27,8 @@ export function sendJson(res, status, payload, extraHeaders = {}) {
   res.end(JSON.stringify(payload));
 }
 
-export const ok = (res, data, status = 200, headers) =>
-  sendJson(res, status, { ok: true, data, error: null }, headers);
+export const ok = (res, data, status = 200, meta) =>
+  sendJson(res, status, { ok: true, data, error: null, ...(meta ? { meta } : {}) });
 
 export const fail = (res, status, message) =>
   sendJson(res, status, { ok: false, data: null, error: message });

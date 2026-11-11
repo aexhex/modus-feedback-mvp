@@ -1,18 +1,31 @@
 // HTTP API. Все ответы — конверт { ok, data, error }.
-import { TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, SESSION_COOKIE } from './config.js';
-import { forbidden, badRequest } from './http.js';
+import {
+  TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, SESSION_COOKIE, SESSION_TTL_HOURS, TRANSITIONS,
+} from './config.js';
+import { forbidden } from './http.js';
 import { canSeeAnalytics, canAdminister } from './access.js';
 import { login, logout } from './auth.js';
 import {
   listTickets, getTicketDetail, similarTickets, improvementsBoard,
 } from './tickets-query.js';
 import {
-  createTicket, changeStatus, addComment, reassign, setPriority, supportTicket, markDuplicate,
+  createTicket, changeStatus, addComment, reassign, setPriority, supportTicket, markDuplicate, rateTicket, setPublic,
 } from './tickets-actions.js';
-import { buildAnalytics } from './analytics.js';
-import { listCategories, listUsers, createCategory, updateCategory, setAvailability } from './admin.js';
+import { exportTicketsCsv } from './export.js';
+import { buildAnalytics, buildReport } from './analytics.js';
+import { listCategories, listUsers, createCategory, updateCategory, createUser, updateUser } from './admin.js';
 import { uploadAttachment, readAttachment } from './attachments.js';
-import { listNotifications, markAllRead } from './notifications.js';
+import { listNotifications, markAllRead, listOutbox } from './notifications.js';
+import { setWatching, inviteWatcher, createB24Task } from './collab.js';
+import { getSlaDays, setSla, listHolidays, setHolidays } from './settings.js';
+import { audit, listAudit } from './audit.js';
+import { listTemplates, createTemplate, updateTemplate, deleteTemplate } from './templates.js';
+import { saveReport, recognition } from './reports.js';
+import {
+  listSurveys, createSurvey, getSurvey, submitAnswers, setSurveyOpen, surveyResults,
+} from './surveys.js';
+import { submitClientFeedback, listClientFeedback, markClientFeedback } from './client-feedback.js';
+import { buildHome } from './home.js';
 
 const cookie = (token, maxAge) =>
   `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
@@ -32,7 +45,7 @@ export function registerRoutes(router) {
   add('GET', '/api/demo-users', ({ ctx }) => ({ users: listUsers(ctx.db), roles: ROLES }), PUBLIC);
   add('POST', '/api/session', ({ ctx, body, res }) => {
     const token = login(ctx.db, body.userId, ctx.now());
-    res.setHeader('Set-Cookie', cookie(token, 60 * 60 * 12));
+    res.setHeader('Set-Cookie', cookie(token, SESSION_TTL_HOURS * 3600));
     return { loggedIn: true };
   }, { ...PUBLIC, mutate: true });
   add('DELETE', '/api/session', ({ ctx, token, res }) => {
@@ -48,13 +61,28 @@ export function registerRoutes(router) {
     priorities: toList(PRIORITIES),
     statuses: toList(STATUSES),
     categories: listCategories(ctx.db, { activeOnly: true }).map(({ id, name }) => ({ id, name })),
-    departments: ctx.db.prepare('SELECT DISTINCT department FROM tickets ORDER BY department').all().map((r) => r.department),
+    departments: ctx.db.prepare('SELECT DISTINCT department FROM tickets WHERE is_anonymous = 0 ORDER BY department').all().map((r) => r.department),
     staff: listUsers(ctx.db).filter((u) => u.role !== 'employee'),
-    limits: { attachmentBytes: LIMITS.attachmentBytes },
+    limits: { attachmentBytes: LIMITS.attachmentBytes, exportMax: LIMITS.exportMax },
+    transitions: TRANSITIONS,
+    templates: listTemplates(ctx.db),
+    sla: getSlaDays(ctx.db),
   }));
+  add('GET', '/api/home', ({ ctx, user }) => buildHome(ctx.db, user, ctx.now()));
 
   // --- Обращения ---
-  add('GET', '/api/tickets', ({ ctx, user, query }) => listTickets(ctx.db, user, query, ctx.now()));
+  add('GET', '/api/tickets', ({ ctx, user, query, setMeta }) => {
+    const { items, total, page, limit } = listTickets(ctx.db, user, query, ctx.now());
+    setMeta({ total, page, limit });
+    return items;
+  });
+  add('GET', '/api/tickets/export', ({ ctx, user, query, sendRaw }) => {
+    sendRaw(Buffer.from(exportTicketsCsv(ctx.db, user, query, ctx.now()), 'utf8'), {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="obrashcheniya.csv"',
+      'Cache-Control': 'no-store',
+    });
+  });
   add('GET', '/api/tickets/similar', ({ ctx, user, query }) =>
     similarTickets(ctx.db, user, String(query.text || '').slice(0, 2000)));
   add('POST', '/api/tickets', ({ ctx, user, body, status }) => {
@@ -74,6 +102,21 @@ export function registerRoutes(router) {
   action('assign', reassign);
   action('priority', setPriority);
   action('duplicate', markDuplicate);
+  action('feedback', rateTicket);
+  add('POST', '/api/tickets/:id/watch', ({ ctx, user, params, body }) => {
+    setWatching(ctx.db, user, params.id, body, ctx.now());
+    try {
+      return getTicketDetail(ctx.db, user, params.id, ctx.now());
+    } catch (error) {
+      // Приглашённый коллега отписался и больше не видит обращение: действие выполнено, карточки нет.
+      if (error.status === 404) return { left: true };
+      throw error;
+    }
+  }, MUTATE);
+  action('invite', inviteWatcher);
+  action('b24-task', createB24Task);
+  action('report', saveReport);
+  action('publish', setPublic);
 
   add('POST', '/api/tickets/:id/support', ({ ctx, user, params }) =>
     ({ supportsCount: supportTicket(ctx.db, user, params.id, ctx.now()) }), MUTATE);
@@ -91,7 +134,40 @@ export function registerRoutes(router) {
   });
 
   // --- Прозрачность, аналитика, уведомления ---
-  add('GET', '/api/board', ({ ctx }) => improvementsBoard(ctx.db));
+  add('GET', '/api/board', ({ ctx }) => ({ ...improvementsBoard(ctx.db), ...recognition(ctx.db, ctx.now()) }));
+  add('GET', '/api/report', ({ ctx, user, query }) => {
+    requireRole(canSeeAnalytics, user);
+    return buildReport(ctx.db, query, ctx.now());
+  });
+
+  // --- Опросы сотрудников ---
+  add('GET', '/api/surveys', ({ ctx, user }) => listSurveys(ctx.db, user));
+  add('POST', '/api/surveys', ({ ctx, user, body, status }) => {
+    status(201);
+    return { id: createSurvey(ctx.db, user, body, ctx.now()) };
+  }, MUTATE);
+  add('GET', '/api/surveys/:id', ({ ctx, user, params }) => getSurvey(ctx.db, user, params.id));
+  add('GET', '/api/surveys/:id/results', ({ ctx, user, params }) => surveyResults(ctx.db, user, params.id));
+  add('POST', '/api/surveys/:id/answers', ({ ctx, user, params, body }) => {
+    submitAnswers(ctx.db, user, params.id, body, ctx.now());
+    return { done: true };
+  }, MUTATE);
+  add('PATCH', '/api/surveys/:id', ({ ctx, user, params, body }) => {
+    setSurveyOpen(ctx.db, user, params.id, body);
+    return listSurveys(ctx.db, user);
+  }, MUTATE);
+
+  // --- Обратная связь от клиентов: отправка без входа, просмотр — руководителю ---
+  add('POST', '/api/public/feedback', ({ ctx, body, status }) => {
+    submitClientFeedback(ctx.db, body, ctx.now());
+    status(201);
+    return { accepted: true };
+  }, { public: true, mutate: true, strict: true });
+  add('GET', '/api/client-feedback', ({ ctx, user }) => listClientFeedback(ctx.db, user));
+  add('PATCH', '/api/client-feedback/:id', ({ ctx, user, params, body }) => {
+    markClientFeedback(ctx.db, user, params.id, body);
+    return listClientFeedback(ctx.db, user);
+  }, MUTATE);
   add('GET', '/api/analytics', ({ ctx, user }) => {
     requireRole(canSeeAnalytics, user);
     return buildAnalytics(ctx.db, ctx.now());
@@ -102,31 +178,66 @@ export function registerRoutes(router) {
     return { done: true };
   }, MUTATE);
 
-  // --- Администрирование ---
-  add('GET', '/api/admin/categories', ({ ctx, user }) => {
-    requireRole(canAdminister, user);
-    return listCategories(ctx.db);
-  });
-  add('POST', '/api/admin/categories', ({ ctx, user, body, status }) => {
-    requireRole(canAdminister, user);
+  // --- Администрирование (каждое изменение попадает в журнал действий) ---
+  const admin = (method, path, handler, options) => add(method, path, (args) => {
+    requireRole(canAdminister, args.user);
+    return handler({ ...args, log: (action, details) => audit(args.ctx.db, args.user.id, action, details, args.ctx.now()) });
+  }, options);
+
+  admin('GET', '/api/admin/categories', ({ ctx }) => listCategories(ctx.db));
+  admin('POST', '/api/admin/categories', ({ ctx, body, status, log }) => {
+    const id = createCategory(ctx.db, body);
+    log('Категория создана', String(body.name).trim());
     status(201);
-    return { id: createCategory(ctx.db, body) };
+    return { id };
   }, MUTATE);
-  add('PATCH', '/api/admin/categories/:id', ({ ctx, user, params, body }) => {
-    requireRole(canAdminister, user);
+  admin('PATCH', '/api/admin/categories/:id', ({ ctx, params, body, log }) => {
     updateCategory(ctx.db, params.id, body);
+    const name = ctx.db.prepare('SELECT name FROM categories WHERE id = ?').get(Number(params.id))?.name;
+    log('Категория изменена', `${name}: ${Object.keys(body).join(', ')}`);
     return listCategories(ctx.db);
   }, MUTATE);
-  add('GET', '/api/admin/users', ({ ctx, user }) => {
-    requireRole(canAdminister, user);
-    return listUsers(ctx.db);
-  });
-  add('PATCH', '/api/admin/users/:id', ({ ctx, user, params, body }) => {
-    requireRole(canAdminister, user);
-    if (Number(params.id) === user.id && body.isAvailable === false) {
-      throw badRequest('Нельзя отключить самого себя');
-    }
-    setAvailability(ctx.db, params.id, body);
-    return listUsers(ctx.db);
+
+  admin('GET', '/api/admin/sla', ({ ctx }) => getSlaDays(ctx.db));
+  admin('PATCH', '/api/admin/sla', ({ ctx, body, log }) => {
+    setSla(ctx.db, body);
+    log('Сроки SLA изменены', getSlaDays(ctx.db).map((s) => `${s.label}: ${s.firstResponseDays}/${s.resolveDays}`).join('; '));
+    return getSlaDays(ctx.db);
   }, MUTATE);
+  admin('GET', '/api/admin/holidays', ({ ctx }) => listHolidays(ctx.db));
+  admin('PATCH', '/api/admin/holidays', ({ ctx, body, log }) => {
+    log('Список праздников изменён', `дат: ${setHolidays(ctx.db, body)}`);
+    return listHolidays(ctx.db);
+  }, MUTATE);
+
+  admin('GET', '/api/admin/templates', ({ ctx }) => listTemplates(ctx.db));
+  admin('POST', '/api/admin/templates', ({ ctx, body, status, log }) => {
+    const created = createTemplate(ctx.db, body);
+    log('Шаблон ответа создан', created.title);
+    status(201);
+    return listTemplates(ctx.db);
+  }, MUTATE);
+  admin('PATCH', '/api/admin/templates/:id', ({ ctx, params, body, log }) => {
+    log('Шаблон ответа изменён', updateTemplate(ctx.db, params.id, body).title);
+    return listTemplates(ctx.db);
+  }, MUTATE);
+  admin('DELETE', '/api/admin/templates/:id', ({ ctx, params, log }) => {
+    log('Шаблон ответа удалён', deleteTemplate(ctx.db, params.id));
+    return listTemplates(ctx.db);
+  }, MUTATE);
+
+  admin('GET', '/api/admin/users', ({ ctx }) => listUsers(ctx.db, { includeInactive: true }));
+  admin('POST', '/api/admin/users', ({ ctx, body, status, log }) => {
+    const created = createUser(ctx.db, body);
+    log('Пользователь создан', `${created.name} (${body.role})`);
+    status(201);
+    return listUsers(ctx.db, { includeInactive: true });
+  }, MUTATE);
+  admin('PATCH', '/api/admin/users/:id', ({ ctx, user, params, body, log }) => {
+    log('Пользователь изменён', updateUser(ctx.db, user, params.id, body));
+    return listUsers(ctx.db, { includeInactive: true });
+  }, MUTATE);
+
+  admin('GET', '/api/admin/outbox', ({ ctx }) => listOutbox(ctx.db));
+  admin('GET', '/api/admin/audit', ({ ctx }) => listAudit(ctx.db));
 }

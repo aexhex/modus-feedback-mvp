@@ -1,5 +1,5 @@
 // Заполнение пустой БД демонстрационными данными из датасета с правдоподобной историей.
-import { SLA_HOURS, addHours } from './config.js';
+import { SLA_HOURS, addHours, addBusinessHours } from './config.js';
 import { inTransaction } from './db.js';
 import { addEvent } from './tickets-actions.js';
 import { notify } from './notifications.js';
@@ -49,7 +49,7 @@ function insertTicket(db, ticket, index, ids, nowMs) {
   ).run(
     id, ticket.code, ticket.type, ids.categories.get(ticket.category), ticket.title, ticket.description,
     ticket.priority, ticket.status, authorId, author[2], assigneeId, resolution, created,
-    last ? at(last[1]) : created, at(sla.firstResponse), at(sla.resolve),
+    last ? at(last[1]) : created, addBusinessHours(created, sla.firstResponse), addBusinessHours(created, sla.resolve),
     steps.length ? at(steps[0][1]) : null,
     resolution ? at(last[1]) : null,
   );
@@ -74,6 +74,54 @@ function insertTicket(db, ticket, index, ids, nowMs) {
     });
   }
   return { id, at, assigneeId };
+}
+
+// Два демонстрационных опроса: завершённый с ответами пяти сотрудников (результаты доступны) и открытый.
+function seedSurvey(db, users, nowIso) {
+  const created = addHours(nowIso, -240);
+  const { lastInsertRowid } = db
+    .prepare('INSERT INTO surveys (title, description, created_by, created_at) VALUES (?, ?, ?, ?)')
+    .run('Удобство внутренних процессов', 'Короткий опрос: что помогает работать, а что мешает. Ответы показываются только сводно.',
+      users.get('Директор по развитию'), created);
+  const surveyId = Number(lastInsertRowid);
+  const questions = [
+    ['Насколько понятно, к кому обращаться с рабочим вопросом?', 'scale', [4, 3, 5, 3, 4]],
+    ['Насколько быстро смежные подразделения отвечают на запросы?', 'scale', [3, 2, 4, 3, 2]],
+    ['Что стоит изменить в первую очередь?', 'text', [
+      'Единое место для статусов по документам.', 'Понятные сроки ответа от смежных отделов.', '',
+      'Шаблон постановки задачи с результатом и сроком.', 'Актуальные инструкции в одном месте.',
+    ]],
+  ];
+  const respondents = ['Сотрудник закупок', 'Сотрудник бухгалтерии', 'Менеджер по продажам', 'Координатор проекта', 'Сотрудник проектирования'];
+  questions.forEach(([text, kind, answers], position) => {
+    const q = db.prepare('INSERT INTO survey_questions (survey_id, text, kind, position) VALUES (?, ?, ?, ?)').run(surveyId, text, kind, position);
+    respondents.forEach((name, i) => {
+      db.prepare('INSERT INTO survey_answers (question_id, user_id, value, created_at) VALUES (?, ?, ?, ?)')
+        .run(Number(q.lastInsertRowid), users.get(name), String(answers[i]), addHours(created, 5 + i * 7));
+    });
+  });
+  db.prepare('UPDATE surveys SET is_open = 0 WHERE id = ?').run(surveyId);
+
+  const open = db
+    .prepare('INSERT INTO surveys (title, description, created_by, created_at) VALUES (?, ?, ?, ?)')
+    .run('Как вам новая система обратной связи?', 'Два вопроса, одна минута. Результаты подведём после закрытия опроса.',
+      users.get('Директор по развитию'), addHours(nowIso, -20));
+  const openId = Number(open.lastInsertRowid);
+  const insert = db.prepare('INSERT INTO survey_questions (survey_id, text, kind, position) VALUES (?, ?, ?, ?)');
+  insert.run(openId, 'Насколько удобно подавать обращения?', 'scale', 0);
+  insert.run(openId, 'Чего не хватает?', 'text', 1);
+}
+
+// Вымышленные отзывы клиентов для демонстрации расчёта NPS.
+function seedClientFeedback(db, nowIso) {
+  const rows = [
+    ['Условный клиент А', 'ООО «Пример-Строй»', 10, 'Проект сдали в срок, инженеры всегда на связи.', 200],
+    ['Условный клиент Б', 'АО «Объект-Сервис»', 9, 'Понравилась пусконаладка: быстро и аккуратно.', 130],
+    ['Условный клиент В', null, 7, 'Оборудование хорошее, но спецификацию согласовывали дольше, чем ожидали.', 60],
+    ['Условный клиент Г', 'ИП «Пример»', 4, 'Долго ждали ответа по гарантийному обращению.', 20],
+  ];
+  const insert = db.prepare('INSERT INTO client_feedback (name, company, score, message, created_at) VALUES (?, ?, ?, ?, ?)');
+  for (const [name, company, score, message, hoursAgo] of rows) insert.run(name, company, score, message, addHours(nowIso, -hoursAgo));
 }
 
 export function seedIfEmpty(db, nowIso) {
@@ -104,6 +152,11 @@ export function seedIfEmpty(db, nowIso) {
       ticketId: a003.id, actorId: a003.assigneeId, kind: 'comment', internal: true, at: a003.at(30),
       body: 'Внутренняя заметка: согласовать с IT выгрузку справочника номенклатуры для проверки дублей.',
     });
+
+    // Предложения опубликованы в ленте идей; проблемы и отзыв остаются закрытыми для посторонних.
+    db.exec("UPDATE tickets SET is_public = 1 WHERE type = 'idea'");
+    seedSurvey(db, users, nowIso);
+    seedClientFeedback(db, nowIso);
   });
   return true;
 }
