@@ -88,3 +88,44 @@ export const options = (items, { valueKey = 'key', labelKey = 'label', empty } =
   empty !== undefined ? h('option', { value: '' }, empty) : null,
   ...items.map((item) => h('option', { value: String(item[valueKey]) }, item[labelKey])),
 ];
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Аналог h() для SVG: элементы создаются в пространстве имён SVG.
+export function svg(tag, attrs, ...children) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [key, val] of Object.entries(attrs ?? {})) {
+    if (val === null || val === undefined || val === false) continue;
+    if (key.startsWith('on') && typeof val === 'function') el.addEventListener(key.slice(2).toLowerCase(), val);
+    else el.setAttribute(key, String(val));
+  }
+  append(el, children);
+  return el;
+}
+
+const ICON_PATHS = {
+  bell: ['M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9', 'M13.7 21a2 2 0 0 1-3.4 0'],
+  sun: ['M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z', 'M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4'],
+  moon: ['M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z'],
+  clip: ['M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5'],
+};
+
+export const icon = (name, size = 18) => svg('svg', {
+  viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor',
+  'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true', class: 'icon',
+}, ICON_PATHS[name].map((d) => svg('path', { d })));
+
+const FILE_TYPES = '.pdf,.png,.jpg,.jpeg,.txt,.docx,.xlsx,.csv';
+
+// Кнопка выбора файла на русском вместо системной: сам <input> скрыт, но доступен с клавиатуры.
+export function filePicker({ multiple = false, onchange } = {}) {
+  const names = h('span', { class: 'file-names muted' }, 'Файл не выбран');
+  const input = h('input', { type: 'file', accept: FILE_TYPES, multiple, onchange: () => {
+    const list = [...input.files].map((f) => f.name);
+    names.textContent = list.length ? list.join(', ') : 'Файл не выбран';
+    if (onchange) onchange(input);
+  } });
+  const el = h('label', { class: 'file-pick' }, input,
+    h('span', { class: 'btn btn-sm' }, icon('clip', 16), multiple ? 'Выбрать файлы' : 'Прикрепить файл'), names);
+  return { el, input };
+}

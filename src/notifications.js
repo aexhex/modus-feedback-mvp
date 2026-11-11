@@ -47,3 +47,11 @@ export function listOutbox(db) {
     .all(OUTBOX_LIMIT)
     .map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
 }
+
+// Запись произвольного вызова Битрикс24 в журнал имитации; возвращает номер записи.
+export function logOutbox(db, { method, recipient, payload, now }) {
+  const { lastInsertRowid } = db
+    .prepare("INSERT INTO outbox (channel, method, recipient, payload, created_at) VALUES ('bitrix24', ?, ?, ?, ?)")
+    .run(method, recipient, JSON.stringify(payload), now);
+  return Number(lastInsertRowid);
+}

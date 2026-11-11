@@ -5,6 +5,7 @@ const TITLES = {
   mine: ['Мои обращения', 'Всё, что вы отправили, и что с этим происходит сейчас.'],
   assigned: ['Назначенные мне', 'Обращения, которые ждут вашего решения. Просроченные отмечены красным.'],
   all: ['Все обращения', 'Полный реестр с фильтрами по подразделению, категории, статусу и срокам.'],
+  feed: ['Лента идей', 'Обращения, которые авторы открыли для всех. Комментируйте и поддерживайте — так идея быстрее попадёт в работу.'],
 };
 const FILTER_KEYS = ['q', 'type', 'status', 'category', 'priority', 'department'];
 
@@ -70,7 +71,8 @@ export async function renderList(el, { me, meta, query, go }) {
     // Устаревший ответ (пришёл позже более нового запроса) или уход со страницы — не отрисовываем.
     if (seq !== requestSeq || !results.isConnected) return;
     mount(results,
-      h('p', { class: 'count' }, `Найдено: ${pageMeta.total}`),
+      h('p', { class: 'count' }, `Найдено: ${pageMeta.total}`,
+        pageMeta.total > meta.limits.exportMax && ` · в экспорт попадут первые ${meta.limits.exportMax}`),
       items.length === 0
         ? h('div', { class: 'card empty' }, scope === 'mine' && pageMeta.total === 0 ? 'Вы ещё не отправляли обращений.' : 'По выбранным условиям ничего нет.')
         : h('table', { class: 'table' },
