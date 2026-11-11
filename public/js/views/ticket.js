@@ -1,5 +1,5 @@
-import { h, mount, toast, badge, slaChip, fmtDate, fileToBase64, filePicker } from '../dom.js';
-import { get, post } from '../api.js';
+import { h, mount, toast, badge, slaChip, fmtDate, fileToBase64, filePicker, field } from '../dom.js';
+import { get, post, patch } from '../api.js';
 import { processingCard } from './ticket-panels.js';
 
 const EVENT_TITLES = {
@@ -12,7 +12,8 @@ const EVENT_TITLES = {
   priority: () => 'Изменение приоритета',
   escalation: () => 'Эскалация: нарушен срок',
   feedback: () => 'Оценка автора',
-  publish: () => 'Лента идей',
+  edited: () => 'Исправлено автором',
+  publish: () => 'Идеи коллег',
   report: () => 'Отчёт о внедрении',
   invite: () => 'Приглашение в обсуждение',
   b24_task: () => 'Задача в Битрикс24',
@@ -86,11 +87,31 @@ function votingCard(t, reload) {
       : 'Голосовать можно за чужие нерассмотренные идеи из ленты.'));
 }
 
+// Автор правит тему, описание и решение, пока обращение не взяли в работу.
+function openEditor(card, t, reload) {
+  const title = h('input', { type: 'text', maxlength: 150, value: t.title });
+  const description = h('textarea', { rows: 6, maxlength: 5000 }, t.description);
+  const solution = h('textarea', { rows: 3, maxlength: 3000 }, t.proposedSolution ?? '');
+  card.replaceChildren(h('form', { class: 'stack', onsubmit: async (e) => {
+    e.preventDefault();
+    try {
+      await patch(`/tickets/${t.id}`, { title: title.value, description: description.value, proposedSolution: solution.value });
+      toast('Обращение исправлено, ответственный уведомлён', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  } },
+  h('h3', null, 'Исправить обращение'),
+  field('Кратко, о чём обращение', title), field('Описание', description), field('Предлагаемое решение', solution),
+  h('div', { class: 'row' }, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Сохранить'),
+    h('button', { class: 'btn btn-ghost', type: 'button', onclick: reload }, 'Отмена'))));
+  title.focus();
+}
+
 function factsCard(t, reload) {
   const supportBtn = t.permissions.canSupport && !['implemented', 'rejected', 'closed'].includes(t.status)
     && h('button', { class: 'btn btn-sm', onclick: async () => {
-      try { await post(`/tickets/${t.id}/support`); toast('Вы поддержали обращение', 'success'); reload(); } catch (err) { toast(err.message, 'error'); }
-    } }, '+ Поддержать');
+      try { await post(`/tickets/${t.id}/support`); toast('Отмечено: у вас такая же проблема', 'success'); reload(); } catch (err) { toast(err.message, 'error'); }
+    } }, 'У меня тоже');
   const watchBtn = t.permissions.canWatch && h('button', { class: 'btn btn-sm', onclick: async () => {
     try {
       const result = await post(`/tickets/${t.id}/watch`, { watch: !t.isWatching });
@@ -103,7 +124,7 @@ function factsCard(t, reload) {
   const publishBtn = t.permissions.canPublish && h('button', { class: 'btn btn-sm', onclick: async () => {
     try {
       await post(`/tickets/${t.id}/publish`, { isPublic: !t.isPublic });
-      toast(t.isPublic ? 'Обращение убрано из ленты идей' : 'Обращение опубликовано в ленте идей', 'success');
+      toast(t.isPublic ? 'Обращение убрано из «Идей коллег»' : 'Обращение показано в «Идеях коллег»', 'success');
       reload();
     } catch (err) { toast(err.message, 'error'); }
   } }, t.isPublic ? 'Убрать из ленты' : 'Опубликовать в ленте');
@@ -119,7 +140,7 @@ function factsCard(t, reload) {
       fact('Первый ответ', t.firstResponseAt ? fmtDate(t.firstResponseAt) : `до ${fmtDate(t.firstResponseDue)}`),
       fact('Срок решения', fmtDate(t.dueAt)),
       t.resolvedAt && fact('Решено', fmtDate(t.resolvedAt)),
-      fact('Поддержали', String(t.supportsCount)),
+      t.type === 'problem' && fact('У кого так же', String(t.supportsCount)),
       t.watchers.length > 0 && fact('Наблюдают', t.watchers.map((w) => w.name).join(', '))),
     (supportBtn || watchBtn || publishBtn) && h('div', { class: 'row', style: { marginTop: '12px' } }, supportBtn, watchBtn, publishBtn));
 }
@@ -156,7 +177,7 @@ export async function renderTicket(el, { me, meta, params, rerender }) {
     h('a', { href: '#/tickets?scope=mine', class: 'btn btn-ghost btn-sm', onclick: (e) => { e.preventDefault(); history.back(); } }, '← Назад'),
     h('header', { class: 't-head' },
       h('div', { class: 'row' }, h('span', { class: 't-code' }, t.code), badge('status', t.status, t.statusLabel),
-        badge('type', t.type, t.typeLabel), badge('priority', t.priority, t.priorityLabel), slaChip(t), t.isAnonymous && h('span', { class: 'chip' }, 'Анонимно'), t.isPublic && h('span', { class: 'chip' }, 'В ленте идей')),
+        badge('type', t.type, t.typeLabel), badge('priority', t.priority, t.priorityLabel), slaChip(t), t.isAnonymous && h('span', { class: 'chip' }, 'Анонимно'), t.isPublic && h('span', { class: 'chip' }, 'В «Идеях коллег»')),
       h('h1', null, t.title)),
     h('div', { class: 'grid-2' },
       h('div', null,
@@ -170,7 +191,9 @@ export async function renderTicket(el, { me, meta, params, rerender }) {
           h('p', null, h('b', null, 'Эффект. '), t.report.effect)),
         ratingBlock(t, reload),
         h('section', { class: 'card' },
-          h('h3', null, 'Описание'), h('div', { class: 'text-block' }, t.description),
+          h('div', { class: 'row home-between' }, h('h3', null, 'Описание'),
+            t.permissions.canEdit && h('button', { class: 'btn btn-sm', onclick: (e) => openEditor(e.currentTarget.closest('.card'), t, reload) }, 'Исправить')),
+          h('div', { class: 'text-block' }, t.description),
           t.proposedSolution && [h('h3', { style: { marginTop: '18px' } }, 'Предлагаемое решение'), h('div', { class: 'text-block' }, t.proposedSolution)]),
         attachmentsBlock(t, reload),
         h('section', { class: 'card' },

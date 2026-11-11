@@ -51,7 +51,7 @@ function handlerBlock(q) {
     h('div', { class: 'home-grid' },
       card('Ждут первого ответа', ticketList(q.waitingFirstResponse, 'Все новые обращения получили ответ')),
       card('Ближайшие сроки решения', ticketList(q.nextDeadlines, 'Обращений в работе нет'),
-        h('a', { class: 'btn btn-sm home-more', href: '#/kanban' }, 'Открыть доску задач'))),
+        h('a', { class: 'btn btn-sm home-more', href: '#/kanban' }, 'Открыть канбан'))),
   ];
 }
 
@@ -69,7 +69,7 @@ function authorBlock(a, wins) {
         : h('ul', { class: 'list-plain' }, wins.map((w) => h('li', null,
           h('b', null, w.title), h('div', { class: 't-sub' }, `${w.category} · ${fmtDate(w.resolvedAt)}`),
           h('div', { class: 'muted' }, w.resolution)))),
-      h('a', { class: 'btn btn-sm home-more', href: '#/board' }, 'Доска улучшений')));
+      h('a', { class: 'btn btn-sm home-more', href: '#/board' }, 'Все итоги внедрения')));
 }
 
 export async function renderHome(el, { me }) {

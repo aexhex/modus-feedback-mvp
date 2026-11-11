@@ -281,3 +281,42 @@ describe('сброс демо-данных', () => {
     }
   });
 });
+
+describe('исправление обращения автором и фильтр по дате', () => {
+  let app;
+  before(async () => { app = await startTestApp(); });
+  after(() => app.close());
+
+  it('автор исправляет обращение, пока его не взяли в работу', async () => {
+    const id = app.ticketId('A-001');
+    const author = await app.as('Сотрудник закупок');
+    const detail = (await author.get(`/api/tickets/${id}`)).json.data;
+    assert.equal(detail.permissions.canEdit, true);
+    const r = await author.patch(`/api/tickets/${id}`, { title: 'В заявках на оборудование нет параметров', description: detail.description, proposedSolution: 'Обязательные поля в шаблоне' });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.data.title, 'В заявках на оборудование нет параметров');
+    assert.ok(r.json.data.events.some((e) => e.kind === 'edited' && /тема, предлагаемое решение/.test(e.body)));
+    const handler = await app.as('Руководитель закупок');
+    assert.ok((await handler.get('/api/notifications')).json.data.items.some((n) => /A-001: автор исправил обращение/.test(n.text)));
+    assert.equal((await handler.patch(`/api/tickets/${id}`, { title: 'Чужая правка', description: 'Описание чужой правки.' })).status, 403);
+    assert.equal((await author.patch(`/api/tickets/${id}`, { title: 'кр', description: 'Описание достаточно длинное.' })).status, 400);
+  });
+
+  it('после взятия в работу текст не меняется', async () => {
+    const author = await app.as('Менеджер по продажам');
+    const id = app.ticketId('A-009');
+    assert.equal((await author.get(`/api/tickets/${id}`)).json.data.permissions.canEdit, false);
+    assert.equal((await author.patch(`/api/tickets/${id}`, { title: 'Новая тема', description: 'Новое описание обращения.' })).status, 400);
+  });
+
+  it('реестр фильтруется по дате подачи', async () => {
+    const manager = await app.as('Директор по развитию');
+    const all = (await manager.get('/api/tickets?limit=100')).json.meta.total;
+    const week = (await manager.get('/api/tickets?from=2026-11-05&to=2026-11-11&limit=100')).json;
+    assert.ok(week.meta.total > 0 && week.meta.total < all);
+    assert.ok(week.data.every((t) => t.createdAt >= '2026-11-04T21:00:00.000Z'));
+    const old = (await manager.get('/api/tickets?to=2026-10-01&limit=100')).json.meta.total;
+    assert.equal(week.meta.total + old <= all, true);
+    assert.equal((await manager.get('/api/tickets?from=05.11.2026')).status, 400);
+  });
+});
