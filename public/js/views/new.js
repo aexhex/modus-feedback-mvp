@@ -9,7 +9,7 @@ const TYPE_HINTS = {
 const MIN_SIMILAR_QUERY = 15;
 
 function similarPanel() {
-  const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Начните описывать ситуацию — мы покажем похожие обращения коллег. Если ваша тема уже есть, просто поддержите её.'));
+  const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Начните описывать ситуацию — мы покажем похожие обращения коллег. Если такая проблема уже есть, нажмите «У меня тоже»; за похожую идею проголосуйте.'));
   const update = async (text) => {
     if (text.trim().length < MIN_SIMILAR_QUERY) return;
     const items = await get(`/tickets/similar${qs({ text })}`);
@@ -21,15 +21,17 @@ function similarPanel() {
       const supportBtn = h('button', { class: 'btn btn-sm', onclick: async () => {
         try {
           const { supportsCount } = await post(`/tickets/${s.id}/support`);
-          supportBtn.replaceWith(h('span', { class: 'chip' }, `✓ Вы поддержали · ${supportsCount}`));
+          supportBtn.replaceWith(h('span', { class: 'chip' }, `✓ Отмечено · у ${supportsCount} так же`));
         } catch (e) { toast(e.message, 'error'); }
-      } }, '+ Поддержать');
+      } }, 'У меня тоже');
       return h('div', { class: 'similar-item' },
         h('div', { class: 'row' }, h('span', { class: 't-code' }, s.code), h('span', { class: `badge status-${s.status}` }, s.statusLabel), h('span', { class: 'score' }, `сходство ${Math.round(s.score * 100)}%`)),
         h('div', { class: 't-title' }, s.title),
-        h('div', { class: 't-sub' }, `${s.category} · поддержали: ${s.supportsCount}`),
+        h('div', { class: 't-sub' }, s.type === 'idea' ? s.category : `${s.category} · у кого так же: ${s.supportsCount}`),
         h('div', { class: 'row', style: { marginTop: '8px' } },
-          s.isOwn ? h('span', { class: 'chip' }, 'Ваше обращение') : supportBtn,
+          s.isOwn ? h('span', { class: 'chip' }, 'Ваше обращение')
+            : s.type === 'problem' ? supportBtn
+              : s.canOpen && h('a', { class: 'btn btn-sm', href: `#/t/${s.id}` }, 'Проголосовать'),
           s.canOpen && h('a', { class: 'btn btn-sm btn-ghost', href: `#/t/${s.id}` }, 'Открыть')));
     }));
   };
@@ -202,7 +204,7 @@ export function renderNew(el, { me, meta, go, rerender }) {
           h('span', null, h('b', null, 'Подать анонимно'),
             h('div', { class: 'field-hint' }, 'Ваше имя и подразделение скрыты от всех, включая руководителей. Вы по-прежнему видите статус, получаете ответы и можете отвечать на уточнения в комментариях.'))),
         h('label', { class: 'check anon-box' }, publicIn,
-          h('span', null, h('b', null, 'Опубликовать в ленте идей'),
+          h('span', null, h('b', null, 'Показать в «Идеях коллег»'),
             h('div', { class: 'field-hint' }, 'Обращение смогут читать, комментировать и поддерживать все сотрудники. Для предложений включается автоматически — снимите отметку, если тема не для всех.'))),
         h('div', { class: 'row' }, submitBtn, h('a', { class: 'btn btn-ghost', href: '#/tickets?scope=mine' }, 'Отмена'))),
       similar.el));

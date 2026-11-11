@@ -1,5 +1,5 @@
 // Оболочка SPA: сессия, навигация по ролям, хэш-роутер, колокольчик уведомлений.
-import { h, mount, toast, icon } from './dom.js';
+import { h, mount, toast, icon, themeToggle } from './dom.js';
 import { get, post, del } from './api.js';
 import { renderLogin } from './views/login.js';
 import { renderList } from './views/list.js';
@@ -60,21 +60,32 @@ async function loadSession() {
   }
 }
 
-function navItems(me) {
-  return [
-    { href: '#/home', label: 'Главная' },
-    { href: '#/tickets?scope=mine', label: 'Мои обращения' },
-    me.role === 'handler' && { href: '#/tickets?scope=assigned', label: 'Назначенные мне' },
-    isOversight(me) && { href: '#/tickets?scope=all', label: 'Все обращения' },
-    me.role !== 'employee' && { href: '#/kanban', label: 'Доска задач' },
-    { href: '#/tickets?scope=feed', label: 'Лента идей' },
-    { href: '#/board', label: 'Доска улучшений' },
-    { href: '#/surveys', label: 'Опросы' },
-    isOversight(me) && { href: '#/analytics', label: 'Аналитика' },
-    isOversight(me) && { href: '#/digest', label: 'Сводка недели' },
-    isOversight(me) && { href: '#/clients', label: 'Отзывы клиентов' },
-    me.role === 'admin' && { href: '#/admin', label: 'Настройки' },
-  ].filter(Boolean);
+// Меню сгруппировано по смыслу: обращения, идеи, аналитика, обратная связь. Пустые группы не показываются.
+function navGroups(me) {
+  const groups = [
+    { title: null, items: [{ href: '#/home', label: 'Главная' }] },
+    { title: 'Обращения', items: [
+      { href: '#/tickets?scope=mine', label: 'Мои обращения' },
+      me.role === 'handler' && { href: '#/tickets?scope=assigned', label: 'Назначенные мне' },
+      isOversight(me) && { href: '#/tickets?scope=all', label: 'Все обращения' },
+      me.role !== 'employee' && { href: '#/kanban', label: 'Канбан' },
+    ] },
+    { title: 'Идеи', items: [
+      { href: '#/tickets?scope=feed', label: 'Идеи коллег' },
+      { href: '#/board', label: 'Итоги внедрения' },
+    ] },
+    { title: 'Аналитика', items: [
+      isOversight(me) && { href: '#/analytics', label: 'Показатели' },
+      isOversight(me) && { href: '#/digest', label: 'Сводка недели' },
+      isOversight(me) && { href: '#/report', label: 'Отчёт за период' },
+    ] },
+    { title: 'Обратная связь', items: [
+      { href: '#/surveys', label: 'Опросы' },
+      isOversight(me) && { href: '#/clients', label: 'Отзывы клиентов' },
+    ] },
+    { title: null, items: [me.role === 'admin' && { href: '#/admin', label: 'Настройки' }] },
+  ];
+  return groups.map((g) => ({ ...g, items: g.items.filter(Boolean) })).filter((g) => g.items.length > 0);
 }
 
 function bell() {
@@ -97,28 +108,6 @@ function bell() {
     h('button', { class: 'btn btn-ghost', 'aria-label': 'Уведомления', onclick: toggle }, icon('bell', 20)), count, panel);
 }
 
-function themeToggle() {
-  const isDark = () => document.documentElement.dataset.theme === 'dark';
-  const btn = h('button', {
-    class: 'btn btn-ghost', 'aria-label': 'Переключить светлую и тёмную тему', title: 'Светлая / тёмная тема',
-    onclick: () => {
-      const next = isDark() ? 'light' : 'dark';
-      // Смена темы мгновенная: без этого кнопки и карточки «доезжали» бы до новых цветов анимацией.
-      const rootEl = document.documentElement;
-      rootEl.classList.add('theme-switching');
-      rootEl.dataset.theme = next;
-      void rootEl.offsetWidth;
-      requestAnimationFrame(() => rootEl.classList.remove('theme-switching'));
-      try {
-        localStorage.setItem('theme', next);
-      } catch {
-        // Хранилище недоступно: тема сменится до перезагрузки страницы.
-      }
-      btn.replaceChildren(icon(isDark() ? 'sun' : 'moon', 20));
-    },
-  }, icon(isDark() ? 'sun' : 'moon', 20));
-  return btn;
-}
 
 async function refreshBell() {
   const el = document.getElementById('bell-count');
@@ -156,7 +145,9 @@ function shell(me, path, query) {
         h('div', null, h('div', { class: 'brand-name' }, 'Голос сотрудника'), h('div', { class: 'brand-sub' }, 'ГК «Модус Трейд»'))),
       h('nav', { class: 'nav', 'aria-label': 'Основная навигация' },
         h('a', { href: '#/new', class: `nav-cta ${path === '/new' ? 'active' : ''}` }, '+ Новое обращение'),
-        navItems(me).map((item) => h('a', { href: item.href, class: item.href === current ? 'active' : '' }, item.label))),
+        navGroups(me).map((g) => h('div', { class: 'nav-group' },
+          g.title && h('span', { class: 'nav-title' }, g.title),
+          g.items.map((item) => h('a', { href: item.href, class: item.href === current ? 'active' : '', 'aria-current': item.href === current ? 'page' : null }, item.label))))),
       h('div', { class: 'side-foot' }, 'MVP · демонстрационные данные')),
     h('div', { class: 'main' },
       h('header', { class: 'topbar' },

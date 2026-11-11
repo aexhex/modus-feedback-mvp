@@ -3,7 +3,7 @@ import {
   FINAL_STATUSES, STATUSES, TYPES, PRIORITIES, TRANSITIONS, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX,
 } from './config.js';
 import { canView, canProcess, canReassign, canSeeAuthor, listScope } from './access.js';
-import { notFound } from './http.js';
+import { notFound, badRequest } from './http.js';
 import { findSimilar } from './similarity.js';
 import { getReport, canReport } from './reports.js';
 import { ticketVoting } from './votes.js';
@@ -98,6 +98,15 @@ const FILTERS = [
   ['assignee', 't.assignee_id = ?'],
 ];
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MSK_OFFSET_MS = 3 * 3600 * 1000;
+
+function dayStartIso(date, plusDays) {
+  const ms = DATE_RE.test(String(date)) ? Date.parse(`${date}T00:00:00.000Z`) : Number.NaN;
+  if (Number.isNaN(ms)) throw badRequest('Дата указывается в формате ГГГГ-ММ-ДД');
+  return new Date(ms - MSK_OFFSET_MS + plusDays * 24 * 3600 * 1000).toISOString();
+}
+
 function clampInt(value, fallback, min, max) {
   const n = Number.parseInt(value, 10);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
@@ -132,6 +141,15 @@ function buildWhere(user, query, nowIso) {
   }
   if (query.open === '1') where.push(`t.status NOT IN (${FINAL_STATUSES.map((s) => `'${s}'`).join(',')})`);
   if (query.notClosed === '1') where.push("t.status != 'closed'");
+  // Период подачи: границы суток по московскому времени.
+  if (query.from) {
+    where.push('t.created_at >= ?');
+    params.push(dayStartIso(query.from, 0));
+  }
+  if (query.to) {
+    where.push('t.created_at < ?');
+    params.push(dayStartIso(query.to, 1));
+  }
   return { sql: where.join(' AND '), params };
 }
 
@@ -218,12 +236,13 @@ export function getTicketDetail(db, user, id, nowIso) {
       canProcess: processor,
       canReassign: canReassign(user),
       canComment: row.status !== 'closed',
-      canSupport: row.author_id !== user.id && !supported,
+      canSupport: row.type === 'problem' && row.author_id !== user.id && !supported,
       canWatch: row.author_id !== user.id && row.assignee_id !== user.id,
       canInvite: processor && row.status !== 'closed',
       canCreateTask: processor && !isFinal(row.status) && !taskEvent,
       canReport: processor && canReport(db, row.id),
       canAttach: row.status !== 'closed' && (processor || row.author_id === user.id),
+      canEdit: row.author_id === user.id && ['new', 'need_info'].includes(row.status),
       canPublish: processor || row.author_id === user.id,
       allowedStatuses: processor
         ? TRANSITIONS[row.status].map((key) => ({ key, label: STATUSES[key] }))
@@ -236,7 +255,7 @@ export function getTicketDetail(db, user, id, nowIso) {
 export function similarTickets(db, user, text) {
   const candidates = db
     .prepare(
-      `SELECT t.id, t.code, t.title, t.description, t.status, t.author_id, t.assignee_id, t.is_public,
+      `SELECT t.id, t.code, t.title, t.description, t.status, t.author_id, t.assignee_id, t.is_public, t.type,
               c.name AS category_name,
               (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supports_count
        FROM tickets t JOIN categories c ON c.id = t.category_id
@@ -257,6 +276,7 @@ export function similarTickets(db, user, text) {
       score: Math.round(score * 100) / 100,
       canOpen: canView(user, c, isWatching(db, c.id, user.id)),
       isOwn: c.author_id === user.id,
+      type: c.type,
     };
   });
 }

@@ -221,12 +221,13 @@ describe('рассмотрение обращения', () => {
     assert.equal((await handler.post(`/api/tickets/${id}/assign`, { assigneeId: 1 })).status, 403);
   });
 
-  it('поддержка: нельзя дважды и нельзя своё', async () => {
-    const id = app.ticketId('A-020');
+  it('«у меня тоже»: только для проблем, нельзя дважды и нельзя своё', async () => {
+    const id = app.ticketId('A-007');
     const emp = await app.as('Сотрудник офиса');
-    assert.equal((await emp.post(`/api/tickets/${id}/support`)).json.data.supportsCount, 2);
+    assert.equal((await emp.post(`/api/tickets/${app.ticketId('A-020')}/support`)).status, 400);
+    assert.equal((await emp.post(`/api/tickets/${id}/support`)).json.data.supportsCount, 3);
     assert.equal((await emp.post(`/api/tickets/${id}/support`)).status, 400);
-    const author = await app.as('Сотрудник закупок');
+    const author = await app.as('Сотрудник бухгалтерии');
     assert.equal((await author.post(`/api/tickets/${id}/support`)).status, 400);
   });
 

@@ -63,7 +63,7 @@ function hitZones(weeks, tooltip, describe) {
     };
     const hide = () => { tooltip.hidden = true; };
     return svg('rect', {
-      x: PAD.left + slot * i, y: PAD.top, width: slot, height: PLOT_H, class: 'ch-hit', tabindex: 0,
+      x: PAD.left + slot * i, y: PAD.top, width: slot, height: PLOT_H, class: 'ch-hit', tabindex: 0, role: 'img',
       'aria-label': describe(w).map((n) => n.textContent).join(', '),
       onmouseenter: show, onmouseleave: hide, onfocus: show, onblur: hide,
     });
@@ -99,7 +99,7 @@ export function weeklyFlowChart(weeks) {
       bar(center + BAR_GAP / 2, w.resolved, max, 'ch-s2'),
     ];
   });
-  const plot = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Подано и рассмотрено обращений по неделям' },
+  const plot = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'group', 'aria-label': 'Подано и рассмотрено обращений по неделям' },
     grid(max), bars, xLabels(weeks),
     hitZones(weeks, tooltip, (w) => [
       h('div', { class: 'ch-tip-title' }, `Неделя ${weekRange(w.weekStart)}`),
@@ -125,7 +125,7 @@ export function responseTimeChart(weeks) {
     if (!p) return [...acc, []];
     return [...acc.slice(0, -1), [...acc.at(-1), p]];
   }, [[]]).filter((s) => s.length > 1);
-  const plot = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Среднее время до первого ответа по неделям, часы' },
+  const plot = svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'group', 'aria-label': 'Среднее время до первого ответа по неделям, часы' },
     grid(max, ' ч'),
     segments.map((s) => svg('polyline', { points: s.map((p) => `${p.x},${p.y}`).join(' '), class: 'ch-line' })),
     points.filter(Boolean).map((p) => svg('circle', { cx: p.x, cy: p.y, r: 4, class: 'ch-dot' })),

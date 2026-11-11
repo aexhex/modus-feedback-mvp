@@ -9,7 +9,7 @@ import {
   listTickets, getTicketDetail, similarTickets, improvementsBoard,
 } from './tickets-query.js';
 import {
-  createTicket, changeStatus, addComment, reassign, setPriority, supportTicket, markDuplicate, rateTicket, setPublic,
+  createTicket, changeStatus, addComment, reassign, setPriority, supportTicket, markDuplicate, rateTicket, setPublic, editTicket,
 } from './tickets-actions.js';
 import { exportTicketsCsv } from './export.js';
 import { buildAnalytics, buildReport } from './analytics.js';
@@ -122,6 +122,10 @@ export function registerRoutes(router) {
   action('b24-task', createB24Task);
   action('report', saveReport);
   action('publish', setPublic);
+  add('PATCH', '/api/tickets/:id', ({ ctx, user, params, body }) => {
+    editTicket(ctx.db, user, params.id, body, ctx.now());
+    return getTicketDetail(ctx.db, user, params.id, ctx.now());
+  }, MUTATE);
   action('vote', castVote);
   add('GET', '/api/votes', ({ ctx, user }) => voteSummary(ctx.db, user.id));
 
