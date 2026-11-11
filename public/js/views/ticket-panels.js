@@ -118,7 +118,7 @@ export function processingCard(t, meta, onDone) {
   const open = !FINAL.includes(t.status);
   return h('section', { class: 'card stack' },
     h('h3', null, 'Рассмотрение'),
-    t.isPublic && h('div', { class: 'callout' }, 'Обращение опубликовано в ленте идей: ваши ответы, результат и приложенные файлы видят все сотрудники. Для служебного используйте внутренние заметки.'),
+    t.isPublic && h('div', { class: 'callout' }, 'Обращение открыто в «Идеях коллег»: ваши ответы, результат и приложенные файлы видят все сотрудники. Для служебного используйте внутренние заметки.'),
     p.allowedStatuses.length ? statusForm(t, meta, onDone) : h('p', { class: 'muted' }, 'Обращение закрыто.'),
     p.canReport && h('div', { class: 'stack' }, h('h3', null, 'Отчёт о внедрении'), reportForm(t, onDone)),
     // Редкие действия свёрнуты, чтобы на виду оставалось главное: статус и результат.

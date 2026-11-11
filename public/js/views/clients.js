@@ -1,5 +1,5 @@
 // Обратная связь от клиентов: публичная форма (без входа) и раздел для руководителя.
-import { h, mount, toast, field, fmtDate } from '../dom.js';
+import { h, mount, toast, field, fmtDate, themeToggle } from '../dom.js';
 import { get, post, patch } from '../api.js';
 
 const SCORES = Array.from({ length: 11 }, (_, i) => i);
@@ -36,6 +36,7 @@ export function renderClientForm(root) {
     h('span', { class: 't-sub' }, 'Контактные данные необязательны.')));
   mount(root,
     h('div', { class: 'login client-page' },
+      h('div', { class: 'login-top' }, themeToggle()),
       h('h3', null, 'ГК «Модус Трейд»'),
       h('h1', null, 'Оцените работу с нами'),
       h('p', { class: 'login-note' }, 'Отзыв увидят руководители компании. Он помогает понять, что работает хорошо, а что нужно исправить.'),

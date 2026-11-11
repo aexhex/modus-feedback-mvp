@@ -41,7 +41,7 @@ export function ticketVoting(db, user, row) {
 export function castVote(db, user, id, input, now) {
   const row = getVisibleTicketRow(db, user, id);
   if (row.author_id === user.id) throw badRequest('Нельзя голосовать за собственную идею');
-  if (!row.is_public || row.type !== 'idea') throw badRequest('Голосовать можно только за предложения из ленты идей');
+  if (!row.is_public || row.type !== 'idea') throw badRequest('Голосовать можно только за предложения из «Идей коллег»');
   if (isFinal(row.status)) throw badRequest('Идея уже рассмотрена — голоса вернулись к вам');
   const { count } = input;
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > VOTES_PER_IDEA) {

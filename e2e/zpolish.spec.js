@@ -27,7 +27,7 @@ test('редкие действия в карточке свёрнуты', async
 
 test('голосование за идею из ленты', async ({ page }) => {
   await loginAs(page, 'Координатор проекта');
-  await page.getByRole('link', { name: 'Лента идей' }).click();
+  await page.getByRole('link', { name: 'Идеи коллег' }).click();
   await expect(page.locator('.votes-banner')).toContainText('5 свободных голосов');
   await page.getByLabel('Сначала новые').selectOption({ label: 'Сначала популярные' });
   await expect(page).toHaveURL(/sort=votes/);

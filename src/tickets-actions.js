@@ -214,6 +214,8 @@ export function setPriority(db, user, id, input, now) {
 // «Поддержать» — вместо дубликата сотрудник присоединяется к существующему обращению.
 export function supportTicket(db, user, id, now) {
   const row = getTicketRow(db, id);
+  // Для идей есть голосование, «у меня тоже» — только для проблем: два способа поддержки путали бы.
+  if (row.type !== 'problem') throw badRequest('«У меня тоже» — для проблем. За идеи голосуют в «Идеях коллег»');
   if (row.author_id === user.id) throw badRequest('Нельзя поддержать собственное обращение');
   if (isFinal(row.status)) throw badRequest('Обращение уже рассмотрено');
   const { changes } = db
@@ -275,6 +277,27 @@ export function rateTicket(db, user, id, input, now) {
 
 // Публикацию в ленте идей можно включить и отменить: автор — своё решение, обработчик — если в переписке
 // появилось то, что не предназначено всем сотрудникам.
+// Автор исправляет текст, пока обращение не взяли в работу: «Новое» или «Ожидает уточнения».
+// Позже текст не меняется, чтобы решение ответственного относилось к тому, что он прочитал.
+export const EDITABLE_STATUSES = Object.freeze(['new', 'need_info']);
+
+export function editTicket(db, user, id, input, now) {
+  const row = getVisibleTicketRow(db, user, id);
+  if (row.author_id !== user.id) throw forbidden('Исправить обращение может только автор');
+  if (!EDITABLE_STATUSES.includes(row.status)) throw badRequest('Обращение уже в работе — дополните его комментарием');
+  const title = text(input.title, { field: 'Кратко', min: LIMITS.titleMin, max: LIMITS.titleMax, required: true });
+  const description = text(input.description, { field: 'Описание', min: LIMITS.descriptionMin, max: LIMITS.descriptionMax, required: true });
+  const solution = text(input.proposedSolution, { field: 'Предлагаемое решение', max: LIMITS.solutionMax }) || null;
+  const changed = [title !== row.title && 'тема', description !== row.description && 'описание', solution !== row.proposed_solution && 'предлагаемое решение'].filter(Boolean);
+  if (changed.length === 0) return;
+  inTransaction(db, () => {
+    db.prepare('UPDATE tickets SET title = ?, description = ?, proposed_solution = ?, updated_at = ? WHERE id = ?')
+      .run(title, description, solution, now, row.id);
+    addEvent(db, { ticketId: row.id, actorId: user.id, kind: 'edited', body: `Автор исправил: ${changed.join(', ')}`, at: now });
+    notify(db, { userIds: [row.assignee_id], ticketId: row.id, actorId: user.id, now, text: `${row.code}: автор исправил обращение` });
+  });
+}
+
 export function setPublic(db, user, id, input, now) {
   const row = getVisibleTicketRow(db, user, id);
   if (row.author_id !== user.id && !canProcess(user, row)) throw forbidden('Публикацией управляют автор и ответственный');
@@ -286,7 +309,7 @@ export function setPublic(db, user, id, input, now) {
     if (!input.isPublic) db.prepare('DELETE FROM idea_votes WHERE ticket_id = ?').run(row.id);
     addEvent(db, {
       ticketId: row.id, actorId: user.id, kind: 'publish', at: now,
-      body: input.isPublic ? 'Обращение опубликовано в ленте идей' : 'Обращение убрано из ленты идей',
+      body: input.isPublic ? 'Обращение показано в «Идеях коллег»' : 'Обращение убрано из «Идей коллег»',
     });
   });
 }

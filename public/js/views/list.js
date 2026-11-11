@@ -5,9 +5,9 @@ const TITLES = {
   mine: ['Мои обращения', 'Всё, что вы отправили, и что с этим происходит сейчас.'],
   assigned: ['Назначенные мне', 'Обращения, которые ждут вашего решения. Просроченные отмечены красным.'],
   all: ['Все обращения', 'Полный реестр с фильтрами по подразделению, категории, статусу и срокам.'],
-  feed: ['Лента идей', 'Обращения, которые авторы открыли для всех. Комментируйте и поддерживайте — так идея быстрее попадёт в работу.'],
+  feed: ['Идеи коллег', 'Обращения, которые авторы открыли для всех. Комментируйте и поддерживайте — так идея быстрее попадёт в работу.'],
 };
-const FILTER_KEYS = ['q', 'type', 'status', 'category', 'priority', 'department', 'sort'];
+const FILTER_KEYS = ['q', 'type', 'status', 'category', 'priority', 'department', 'sort', 'from', 'to'];
 
 // Фильтры и страница хранятся в адресе: ссылкой на выборку можно поделиться.
 function readFilters(query) {
@@ -29,7 +29,7 @@ function scopeTabs(me, scope) {
 }
 
 function row(t, go) {
-  const sub = [t.category.name, t.department ?? 'анонимно', t.supportsCount ? `поддержали ${t.supportsCount}` : null,
+  const sub = [t.category.name, t.department ?? 'анонимно', t.type === 'problem' && t.supportsCount ? `у кого так же: ${t.supportsCount}` : null,
     t.votesCount ? `голосов ${t.votesCount}` : null];
   return h('tr', { class: t.sla.overdue ? 'overdue' : '', onclick: () => go(`#/t/${t.id}`) },
     h('td', null, h('span', { class: 't-code' }, t.code)),
@@ -115,6 +115,9 @@ export async function renderList(el, { me, meta, query, go }) {
       scope === 'feed'
         ? select('sort', [{ key: 'votes', label: 'Сначала популярные' }], 'Сначала новые')
         : h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: filters.overdue, onchange: set('overdue') }), 'Только просроченные')),
+    h('div', { class: 'row date-filter' },
+      h('label', { class: 'row' }, h('span', { class: 'field-label' }, 'Подано с'), h('input', { type: 'date', value: filters.from, onchange: set('from') })),
+      h('label', { class: 'row' }, h('span', { class: 'field-label' }, 'по'), h('input', { type: 'date', value: filters.to, onchange: set('to') }))),
     results);
   await load();
 }

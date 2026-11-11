@@ -146,3 +146,27 @@ export async function compressPhoto(file) {
   const dataUrl = canvas.toDataURL('image/jpeg', PHOTO_QUALITY);
   return { dataUrl, dataBase64: dataUrl.split(',')[1] };
 }
+
+// Переключатель светлой и тёмной темы: в верхней панели, на экране входа и на форме для клиентов.
+export function themeToggle() {
+  const isDark = () => document.documentElement.dataset.theme === 'dark';
+  const btn = h('button', {
+    class: 'btn btn-ghost theme-toggle', 'aria-label': 'Переключить светлую и тёмную тему', title: 'Светлая / тёмная тема',
+    onclick: () => {
+      const next = isDark() ? 'light' : 'dark';
+      // Смена темы мгновенная: без этого кнопки и карточки «доезжали» бы до новых цветов анимацией.
+      const rootEl = document.documentElement;
+      rootEl.classList.add('theme-switching');
+      rootEl.dataset.theme = next;
+      void rootEl.offsetWidth;
+      requestAnimationFrame(() => rootEl.classList.remove('theme-switching'));
+      try {
+        localStorage.setItem('theme', next);
+      } catch {
+        // Хранилище недоступно: тема сменится до перезагрузки страницы.
+      }
+      btn.replaceChildren(icon(isDark() ? 'sun' : 'moon', 20));
+    },
+  }, icon(isDark() ? 'sun' : 'moon', 20));
+  return btn;
+}
