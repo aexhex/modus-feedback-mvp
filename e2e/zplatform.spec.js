@@ -3,10 +3,10 @@ import { loginAs, openTicket } from './helpers.js';
 
 test('лента идей: чужое предложение можно прочитать и прокомментировать', async ({ page }) => {
   await loginAs(page, 'Сотрудник проектирования');
-  await page.getByRole('link', { name: 'Лента идей' }).click();
-  await expect(page.locator('h1')).toHaveText('Лента идей');
+  await page.getByRole('link', { name: 'Идеи коллег' }).click();
+  await expect(page.locator('h1')).toHaveText('Идеи коллег');
   await page.locator('tbody tr', { hasText: 'A-002' }).click();
-  await expect(page.locator('.t-head')).toContainText('В ленте идей');
+  await expect(page.locator('.t-head')).toContainText('В «Идеях коллег»');
   await expect(page.getByText('Рассмотрение', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Убрать из ленты' })).toHaveCount(0);
 
@@ -18,7 +18,7 @@ test('лента идей: чужое предложение можно проч
 test('предложение по умолчанию публикуется в ленте, проблема — нет', async ({ page }) => {
   await loginAs(page, 'Сотрудник офиса');
   await page.goto('/#/new');
-  const publish = page.getByLabel('Опубликовать в ленте идей');
+  const publish = page.getByLabel('Показать в «Идеях коллег»');
   await expect(publish).not.toBeChecked();
   await page.locator('.type-card', { hasText: 'Предложение' }).click();
   await expect(publish).toBeChecked();
@@ -32,18 +32,18 @@ test('отчёт о внедрении появляется в карточке 
   await page.getByRole('button', { name: 'Опубликовать отчёт' }).click();
   await expect(page.locator('.resolution', { hasText: 'Отчёт о внедрении' })).toContainText('два семинара');
 
-  await page.getByRole('link', { name: 'Доска улучшений' }).click();
+  await page.getByRole('link', { name: 'Итоги внедрения' }).click();
   await expect(page.locator('.win', { hasText: 'A-004' })).toContainText('Эффект:');
   await expect(page.locator('.recognition')).toContainText('Автор месяца');
 });
 
 test('руководитель: нагрузка в аналитике и отчёт за период', async ({ page }) => {
   await loginAs(page, 'Директор по развитию');
-  await page.getByRole('link', { name: 'Аналитика', exact: true }).click();
+  await page.getByRole('link', { name: 'Показатели' }).click();
   await expect(page.locator('.card', { hasText: 'Нагрузка по ответственным' })).toContainText('IT-специалист');
   await expect(page.locator('.card', { hasText: 'Среднее время в статусе' })).toContainText('На рассмотрении');
 
-  await page.getByRole('link', { name: 'Отчёт за период' }).click();
+  await page.locator('#content').getByRole('link', { name: 'Отчёт за период' }).click();
   await expect(page.locator('h1')).toHaveText('Отчёт за период');
   await expect(page.locator('.report-section', { hasText: 'Реализовано за период' })).toContainText('A-008');
   await expect(page.getByRole('button', { name: 'Печать / PDF' })).toBeVisible();

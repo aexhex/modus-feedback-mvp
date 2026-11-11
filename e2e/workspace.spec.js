@@ -22,7 +22,7 @@ test('главная ответственного показывает его о
 
 test('доска задач: перемещение карточки, вопрос автору через диалог', async ({ page }) => {
   await loginAs(page, 'Ответственный за обучение');
-  await page.getByRole('link', { name: 'Доска задач' }).click();
+  await page.locator('.nav').getByRole('link', { name: 'Канбан' }).click();
   await expect(page.locator('[data-status="new"] .kb-card')).toContainText('A-016');
 
   await page.getByLabel('Переместить A-016').selectOption({ label: 'На рассмотрении' });
