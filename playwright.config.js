@@ -20,6 +20,6 @@ export default defineConfig({
     command: 'node server.js',
     url: `http://127.0.0.1:${PORT}`,
     reuseExistingServer: false,
-    env: { PORT: String(PORT), DB_PATH: 'data/e2e/feedback.db', UPLOADS_DIR: 'data/e2e/uploads', RESET: '1', DEMO_MODE: '1' },
+    env: { PORT: String(PORT), DB_PATH: 'data/e2e/feedback.db', UPLOADS_DIR: 'data/e2e/uploads', RESET: '1', DEMO_MODE: '1', MUTATIONS_PER_MINUTE: '1000' },
   },
 });

@@ -1,5 +1,6 @@
 // Панели обработки обращения: смена статуса, приоритет, переназначение, дубликат.
 import { h, toast, field, options } from '../dom.js';
+import { t as tr } from '../i18n.js';
 import { post } from '../api.js';
 
 const FINAL = ['implemented', 'rejected', 'closed'];
@@ -81,8 +82,22 @@ function duplicateForm(t, onDone) {
 }
 
 // Задача уходит в Битрикс24 (tasks.task.add); без подключения к порталу — только запись в журнал.
+// Статус задачи с портала: система проверяет его по расписанию и сообщает ответственному о завершении.
+function taskStatus(t, meta, onDone) {
+  const task = t.b24Task.task;
+  const canDemoComplete = meta.b24Mode === 'demo' && task && t.permissions.canProcess && !['Ждёт контроля', 'Завершена'].includes(task.statusLabel);
+  return h('div', { class: 'stack' },
+    h('p', { class: 'muted' }, t.b24Task.text),
+    task?.statusLabel && h('p', null, `${tr('Статус в Битрикс24')}: `, h('b', null, task.statusLabel)),
+    task?.error && h('p', { class: 'outbox-error' }, task.error),
+    canDemoComplete && h('form', { onsubmit: run(async () => {
+      await post(`/tickets/${t.id}/b24-task/demo-complete`);
+      toast('Задача завершена на демо-портале — система получила статус', 'success');
+    }, onDone) }, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Завершить задачу на демо-портале')));
+}
+
 function taskBlock(t, meta, onDone) {
-  if (t.b24Task) return h('p', { class: 'muted' }, t.b24Task.text);
+  if (t.b24Task) return taskStatus(t, meta, onDone);
   if (!t.permissions.canCreateTask) return h('p', { class: 'muted' }, 'Доступно для обращений в работе.');
   const live = meta.b24Mode !== 'off';
   return h('form', { onsubmit: run(async () => {

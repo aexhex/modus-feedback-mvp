@@ -7,6 +7,7 @@ import { notFound, badRequest } from './http.js';
 import { findSimilar } from './similarity.js';
 import { getReport, canReport } from './reports.js';
 import { ticketVoting } from './votes.js';
+import { taskInfo } from './integrations/b24-task-status.js';
 
 export const BASE_SELECT = `
 SELECT t.*, c.name AS category_name, a.name AS author_name, s.name AS assignee_name,
@@ -96,6 +97,7 @@ const FILTERS = [
   // Анонимные обращения не попадают в выборку по подразделению — иначе фильтр раскрывал бы автора.
   ['department', '(t.department = ? AND t.is_anonymous = 0)'],
   ['assignee', 't.assignee_id = ?'],
+  ['counterparty', 't.counterparty_id = ?'],
 ];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -229,7 +231,7 @@ export function getTicketDetail(db, user, id, nowIso) {
     attachments,
     watchers,
     isWatching: watching,
-    b24Task: taskEvent ? { text: taskEvent.body, createdAt: taskEvent.created_at } : null,
+    b24Task: taskEvent ? { text: taskEvent.body, createdAt: taskEvent.created_at, task: taskInfo(db, row.id) } : null,
     report: getReport(db, row.id),
     voting: row.is_public && row.type === 'idea' ? ticketVoting(db, user, row) : null,
     feedback: feedback
