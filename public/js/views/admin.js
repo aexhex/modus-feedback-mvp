@@ -1,7 +1,7 @@
 import { h, mount, toast, options } from '../dom.js';
 import { t } from '../i18n.js';
 import { get, post, patch } from '../api.js';
-import { templatesCard, holidaysCard, usersAdminCard, auditCard } from './admin-extra.js';
+import { templatesCard, holidaysCard, usersAdminCard, auditCard, retentionCard } from './admin-extra.js';
 import { integrationsCard, outboxCard } from './admin-integrations.js';
 
 const ROLE_LABELS = { employee: 'Сотрудник', handler: 'Ответственный', manager: 'Руководитель', admin: 'Администратор' };
@@ -179,10 +179,10 @@ function demoCard() {
 }
 
 export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
-  const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations, workHours, timezone] = await Promise.all([
+  const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations, workHours, timezone, retention] = await Promise.all([
     get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
     get('/admin/templates'), get('/admin/calendar'), get('/admin/audit'), get('/admin/targets'), get('/admin/integrations'),
-    get('/admin/work-hours'), get('/admin/timezone'),
+    get('/admin/work-hours'), get('/admin/timezone'), get('/admin/retention'),
   ]);
   const staff = users.filter((u) => u.role !== 'employee' && u.isActive);
   const reload = async () => { await refreshMeta(); rerender(); };
@@ -192,6 +192,7 @@ export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
     meta.demoMode && demoCard(),
     categoriesCard(categories, staff, reload),
     usersAdminCard(users, me, reload),
+    retentionCard(retention, reload),
     h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload, workHours, timezone), holidaysCard(holidays, reload)),
     targetsCard(targets, reload),
     integrationsCard(integrations, reload, outbox.filter((o) => o.channel === 'email')),

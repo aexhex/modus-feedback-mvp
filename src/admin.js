@@ -27,7 +27,7 @@ export function listCategories(db, { activeOnly = false } = {}) {
 export function listUsers(db, { includeInactive = false, withB24 = false } = {}) {
   return db
     .prepare(
-      `SELECT id, name, role, department, is_available AS isAvailable, is_active AS isActive${withB24 ? ', b24_id AS b24Id, position, email, phone' : ''}
+      `SELECT id, name, role, department, is_available AS isAvailable, is_active AS isActive${withB24 ? ', b24_id AS b24Id, position, email, phone, anonymized_at AS anonymizedAt' : ''}
        FROM users ${includeInactive ? '' : 'WHERE is_active = 1'} ORDER BY role, name`,
     )
     .all()
@@ -127,6 +127,10 @@ export function updateUser(db, actor, id, input, now) {
     isAvailable: input.isAvailable !== undefined ? flag(input.isAvailable, 'isAvailable') : current.is_available,
     isActive: input.isActive !== undefined ? flag(input.isActive, 'isActive') : current.is_active,
   };
+  // Обезличенная запись не включается и не переименовывается: вернувшийся сотрудник заводится заново.
+  if (current.anonymized_at && (next.isActive || next.name !== current.name)) {
+    throw badRequest('Данные сотрудника обезличены — запись не восстанавливается. Добавьте сотрудника заново');
+  }
   if (current.id === actor.id) {
     if (!next.isAvailable || !next.isActive) throw badRequest('Нельзя отключить самого себя');
     if (next.role !== current.role) throw badRequest('Нельзя менять собственную роль');
@@ -143,8 +147,10 @@ export function updateUser(db, actor, id, input, now) {
   const available = next.isActive ? next.isAvailable : 0;
   const leaves = (current.is_active && !next.isActive) || (current.role !== 'employee' && next.role === 'employee');
   const moved = inTransaction(db, () => {
-    db.prepare('UPDATE users SET name = ?, role = ?, department = ?, is_available = ?, is_active = ? WHERE id = ?')
-      .run(next.name, next.role, next.department, available, next.isActive, current.id);
+    // Дата отключения — отсчёт срока хранения персональных данных; при включении сбрасывается.
+    db.prepare(`UPDATE users SET name = ?, role = ?, department = ?, is_available = ?, is_active = ?,
+                deactivated_at = CASE WHEN ? THEN NULL ELSE COALESCE(deactivated_at, ?) END WHERE id = ?`)
+      .run(next.name, next.role, next.department, available, next.isActive, next.isActive ? 1 : 0, now, current.id);
     if (!next.isActive) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(current.id);
     return leaves ? reassignOpenTickets(db, { id: current.id, name: current.name }, now) : 0;
   });
