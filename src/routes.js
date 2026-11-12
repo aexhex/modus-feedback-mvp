@@ -37,8 +37,9 @@ import { registerIntegrationRoutes } from './integrations/routes.js';
 const TASK_WAIT_MS = 3000;
 const delay = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref(); });
 
-const cookie = (token, maxAge) =>
-  `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
+// Secure — когда система работает по HTTPS (COOKIE_SECURE=1 или PUBLIC_URL на https): cookie не уйдёт по HTTP.
+const cookie = (token, maxAge, secure) =>
+  `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
 
 const toList = (dict) => Object.entries(dict).map(([key, label]) => ({ key, label }));
 
@@ -55,12 +56,12 @@ export function registerRoutes(router) {
   add('GET', '/api/demo-users', ({ ctx }) => ({ users: listUsers(ctx.db), roles: ROLES }), PUBLIC);
   add('POST', '/api/session', ({ ctx, body, res }) => {
     const token = login(ctx.db, body.userId, ctx.now());
-    res.setHeader('Set-Cookie', cookie(token, SESSION_TTL_HOURS * 3600));
+    res.setHeader('Set-Cookie', cookie(token, SESSION_TTL_HOURS * 3600, ctx.secureCookie));
     return { loggedIn: true };
   }, { ...PUBLIC, mutate: true });
   add('DELETE', '/api/session', ({ ctx, token, res }) => {
     logout(ctx.db, token);
-    res.setHeader('Set-Cookie', cookie('', 0));
+    res.setHeader('Set-Cookie', cookie('', 0, ctx.secureCookie));
     return { loggedIn: false };
   }, MUTATE);
   add('GET', '/api/me', ({ user }) => ({ ...user, roleLabel: ROLES[user.role] }));
@@ -290,7 +291,7 @@ export function registerRoutes(router) {
     if (!ctx.demoMode) throw forbidden('Сброс данных доступен только в демо-режиме');
     ctx.integrations.delivery.invalidate();
     resetDemo(ctx.db, ctx.uploadsDir, user.name, ctx.now());
-    res.setHeader('Set-Cookie', cookie('', 0));
+    res.setHeader('Set-Cookie', cookie('', 0, ctx.secureCookie));
     return { reset: true };
   }, MUTATE);
   admin('GET', '/api/admin/outbox', ({ ctx }) => listOutbox(ctx.db));

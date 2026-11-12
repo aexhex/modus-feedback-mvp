@@ -20,7 +20,7 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
   for (const userId of unique) {
     insert.run(userId, ticketId, text, now);
     const recipient = hideAll ? 'Получатель скрыт (анонимное обращение)' : (nameOf.get(userId)?.name ?? `user:${userId}`);
-    toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: `/#/t/${ticketId}` }), userId, ticketId ?? null, now);
+    toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: ticketId ? `/#/t/${ticketId}` : '/#/home' }), userId, ticketId ?? null, now);
   }
 }
 

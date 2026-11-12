@@ -5,6 +5,19 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Адрес клиента для ограничения частоты запросов. За обратным прокси (HTTPS-терминатор) все запросы
+ * приходят с адреса прокси, поэтому при TRUST_PROXY=1 берётся первый адрес из X-Forwarded-For.
+ * Включать только за своим прокси: иначе клиент может подставить заголовок сам.
+ */
+export function clientIp(req, trustProxy) {
+  if (trustProxy) {
+    const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+    if (forwarded) return forwarded.slice(0, 64);
+  }
+  return req.socket.remoteAddress;
+}
+
 export const badRequest = (msg) => new HttpError(400, msg);
 export const forbidden = (msg = 'Недостаточно прав') => new HttpError(403, msg);
 export const notFound = (msg = 'Не найдено') => new HttpError(404, msg);
