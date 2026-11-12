@@ -123,7 +123,8 @@ describe('Битрикс24 через демо-портал', () => {
     const admin = await app.as('Администратор системы');
     const p = (await admin.post('/api/admin/integrations/b24/org-preview')).json.data;
     assert.equal(p.portalUsers, 27);
-    assert.equal(p.linked.length, 24);
+    assert.equal(p.linked.length, 23);
+    assert.deepEqual(p.notLinked, ['Администратор системы'], 'администратор по ФИО не связывается — только ADMIN_B24_ID');
     assert.deepEqual(p.created.map((u) => u.name).sort(), ['Инженер сервиса', 'Руководитель сервиса', 'Специалист по закупкам']);
     assert.equal(p.created.find((u) => u.name === 'Руководитель сервиса').role, 'handler', 'руководитель отдела получает роль ответственного');
     assert.deepEqual(p.moved, [{ name: 'Координатор проекта', from: 'Проектный офис', to: 'Проектирование' }]);
@@ -134,7 +135,7 @@ describe('Битрикс24 через демо-портал', () => {
   it('применение связывает, добавляет, переводит и отключает; повтор ничего не меняет', async () => {
     const admin = await app.as('Администратор системы');
     const r = (await admin.post('/api/admin/integrations/b24/org-apply')).json.data;
-    assert.deepEqual(r, { linked: 24, created: 3, moved: 1, dismissed: 1, warnings: [] });
+    assert.deepEqual(r, { linked: 23, created: 3, moved: 1, dismissed: 1, warnings: [] });
     const user = (name) => app.db.prepare('SELECT * FROM users WHERE name = ?').get(name);
     assert.equal(user('Координатор проекта').department, 'Проектирование');
     assert.equal(user('Руководитель проекта').is_active, 0);

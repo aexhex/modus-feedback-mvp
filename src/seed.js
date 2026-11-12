@@ -168,11 +168,22 @@ function seedAttachments(db, uploadsDir, inserted) {
 
 // Рабочий запуск без демо-данных (DEMO_DATA=0): в пустой базе создаётся один администратор,
 // который загружает оргструктуру из Битрикс24 (или импортирует CSV) и настраивает категории.
-export function bootstrapAdmin(db, name = 'Администратор системы') {
+// b24Id (ADMIN_B24_ID) — его ID в Битрикс24: когда вход только через портал, без него администратор не войдёт.
+// Если вход через Битрикс24 включили позже, ID связывается с первым ещё не связанным администратором.
+export function bootstrapAdmin(db, name = 'Администратор системы', b24Id = null) {
+  const id = b24Id === null || b24Id === undefined || b24Id === '' ? null : Number(b24Id);
+  if (id !== null && !(Number.isInteger(id) && id > 0)) throw new Error('ADMIN_B24_ID: нужен числовой ID пользователя Битрикс24');
   const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get();
-  if (n > 0) return false;
-  db.prepare("INSERT INTO users (name, role, department) VALUES (?, 'admin', 'IT')").run(String(name).trim().slice(0, 80) || 'Администратор системы');
-  return true;
+  if (n === 0) {
+    db.prepare("INSERT INTO users (name, role, department, b24_id) VALUES (?, 'admin', 'IT', ?)")
+      .run(String(name).trim().slice(0, 80) || 'Администратор системы', id);
+    return true;
+  }
+  if (id !== null && !db.prepare('SELECT 1 FROM users WHERE b24_id = ?').get(id)) {
+    db.prepare(`UPDATE users SET b24_id = ? WHERE id = (
+      SELECT id FROM users WHERE role = 'admin' AND is_active = 1 AND b24_id IS NULL ORDER BY id LIMIT 1)`).run(id);
+  }
+  return false;
 }
 
 // uploadsDir не обязателен: без него база заполняется без демонстрационных файлов.
