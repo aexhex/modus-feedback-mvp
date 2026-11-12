@@ -4,6 +4,7 @@ import { loginAs, openTicket } from './helpers.js';
 const shot = (page, name) => page.screenshot({ path: `docs/screenshots/${name}.png` });
 
 test('снимки экранов для README', async ({ page }) => {
+  test.setTimeout(120_000);
   await page.goto('/');
   await page.locator('.role-card').first().waitFor();
   await shot(page, '01-login');
@@ -76,4 +77,30 @@ test('снимки экранов для README', async ({ page }) => {
   await page.goto('/#/solutions');
   await page.locator('.solution').first().waitFor();
   await shot(page, '17-solutions');
+
+  // Интеграции: предпросмотр оргструктуры из Битрикс24 (демо-портал), затем клиент из 1С и задача.
+  await loginAs(page, 'Администратор системы');
+  await page.goto('/#/admin');
+  const integrations = page.locator('section.card', { hasText: 'Интеграции с Битрикс24 и 1С УТ' });
+  await integrations.getByRole('button', { name: 'Загрузить оргструктуру' }).click();
+  await integrations.getByRole('region', { name: 'Изменения из Битрикс24' }).waitFor();
+  await integrations.screenshot({ path: 'docs/screenshots/19-integrations.png' });
+  await integrations.getByRole('button', { name: 'Применить изменения' }).click();
+  await integrations.getByRole('button', { name: 'Загрузить контрагентов' }).click();
+  await page.locator('.toast-success').last().waitFor();
+
+  await loginAs(page, 'Ответственный за договоры');
+  await openTicket(page, 'A-009');
+  await page.locator('.more-actions summary').click();
+  await page.getByRole('button', { name: 'Создать задачу в Битрикс24' }).click();
+  await page.locator('.toast-success').last().waitFor();
+  // После действия карточка перерисовывается и панель «Ещё действия» сворачивается.
+  await page.locator('.more-actions').evaluate((d) => { d.open = true; });
+  await page.getByRole('button', { name: 'Завершить задачу на демо-портале' }).click();
+  await page.locator('.timeline', { hasText: 'подтвердите результат' }).waitFor();
+  await page.locator('.toast').evaluateAll((toasts) => toasts.forEach((t) => t.remove()));
+  await page.locator('.more-actions').evaluate((d) => { d.open = true; });
+  const taskPanel = page.locator('.more-actions .stack', { hasText: 'Статус в Битрикс24' }).last();
+  await taskPanel.scrollIntoViewIfNeeded();
+  await page.locator('.more-actions').screenshot({ path: 'docs/screenshots/20-b24-task.png' });
 });

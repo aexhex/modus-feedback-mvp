@@ -3,6 +3,7 @@ FROM node:24-alpine
 
 ENV NODE_ENV=production \
     DEMO_MODE=0 \
+    DEMO_DATA=1 \
     PORT=3000 \
     DB_PATH=/data/feedback.db \
     UPLOADS_DIR=/data/uploads
