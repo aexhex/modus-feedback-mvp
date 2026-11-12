@@ -650,3 +650,7 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 .sync-preview { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .sync-group ul { margin-top: 4px; }
 .outbox-error { color: var(--st-rejected); font-size: 13px; }
+
+/* Приложение на телефоне: плашка «Нет связи» и кнопка установки */
+.offline-banner { position: sticky; top: 0; z-index: 50; padding: 8px 16px; background: var(--text); color: var(--surface); font-size: 14px; text-align: center; }
+.offline-banner[hidden], .install-btn[hidden] { display: none; }
