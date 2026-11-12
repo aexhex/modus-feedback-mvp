@@ -56,8 +56,11 @@ export function addHours(isoDate, hours) {
   return new Date(new Date(isoDate).getTime() + hours * HOUR_MS).toISOString();
 }
 
-// Рабочая неделя считается по московскому времени: выходные и праздники в SLA не входят.
-export const BUSINESS_TZ_OFFSET_HOURS = 3;
+// Часовой пояс компании: по нему считаются рабочие дни и часы, недели в аналитике, границы суток в отчётах.
+// По умолчанию — Казахстан (UTC+5); переопределяется переменной BUSINESS_TZ_OFFSET и в «Настройках».
+// В России и Казахстане нет перехода на летнее время, поэтому достаточно смещения в часах.
+const envOffset = Number.parseInt(process.env.BUSINESS_TZ_OFFSET, 10);
+export const BUSINESS_TZ_OFFSET_HOURS = Number.isInteger(envOffset) && envOffset >= -12 && envOffset <= 14 ? envOffset : 5;
 const DAY_MS = 24 * HOUR_MS;
 const SATURDAY = 6;
 const SUNDAY = 0;
@@ -99,7 +102,7 @@ function skipWeekend(localMs, calendar) {
 export function addBusinessHours(isoDate, hours, calendar = HOLIDAYS) {
   const days = calendar instanceof Set ? { holidays: calendar, workdays: NO_DATES } : calendar;
   if (days.workHours) return addWorkingHours(isoDate, hours, days);
-  const offset = BUSINESS_TZ_OFFSET_HOURS * HOUR_MS;
+  const offset = (days.tzOffset ?? BUSINESS_TZ_OFFSET_HOURS) * HOUR_MS;
   let t = new Date(isoDate).getTime() + offset;
   let remaining = hours * HOUR_MS;
   while (remaining > 0) {
@@ -118,7 +121,7 @@ export function addBusinessHours(isoDate, hours, calendar = HOLIDAYS) {
  */
 function addWorkingHours(isoDate, hours, days) {
   const { start, end } = days.workHours;
-  const offset = BUSINESS_TZ_OFFSET_HOURS * HOUR_MS;
+  const offset = (days.tzOffset ?? BUSINESS_TZ_OFFSET_HOURS) * HOUR_MS;
   let t = new Date(isoDate).getTime() + offset;
   let remaining = (hours / 24) * (end - start) * HOUR_MS;
   while (remaining > 0) {

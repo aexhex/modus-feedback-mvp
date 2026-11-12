@@ -1,5 +1,5 @@
 // Настраиваемые сроки SLA: хранятся в таблице settings, по умолчанию — из config.js.
-import { SLA_HOURS, PRIORITIES, HOLIDAYS } from './config.js';
+import { SLA_HOURS, PRIORITIES, HOLIDAYS, BUSINESS_TZ_OFFSET_HOURS } from './config.js';
 import { badRequest } from './http.js';
 
 const SLA_KEY = 'sla';
@@ -109,8 +109,29 @@ export function setWorkHours(db, input) {
   return { start, end };
 }
 
-/** Производственный календарь для расчёта сроков: праздники, рабочие выходные и рабочие часы. */
-export const getCalendar = (db) => ({ holidays: getHolidays(db), workdays: getWorkdays(db), workHours: getWorkHours(db) });
+const TIMEZONE_KEY = 'timezone';
+
+/** @returns {number} смещение часового пояса компании от UTC в часах */
+export function getTimezone(db) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(TIMEZONE_KEY);
+  const stored = row ? Number(row.value) : Number.NaN;
+  return Number.isInteger(stored) ? stored : BUSINESS_TZ_OFFSET_HOURS;
+}
+
+export const tzOffsetMs = (db) => getTimezone(db) * 3600 * 1000;
+
+// Новый пояс действует для сроков, рассчитанных после сохранения, и для отчётов сразу.
+export function setTimezone(db, input) {
+  const offset = Number(input.offset);
+  if (!Number.isInteger(offset) || offset < -12 || offset > 14) throw badRequest('Часовой пояс: смещение от UTC — целое число часов от −12 до +14');
+  saveSetting(db, TIMEZONE_KEY, offset);
+  return offset;
+}
+
+/** Производственный календарь для расчёта сроков: праздники, рабочие выходные, рабочие часы и пояс. */
+export const getCalendar = (db) => ({
+  holidays: getHolidays(db), workdays: getWorkdays(db), workHours: getWorkHours(db), tzOffset: getTimezone(db),
+});
 
 export const listHolidays = (db) => [...getHolidays(db)].sort();
 export const listCalendar = (db) => ({ holidays: listHolidays(db), workdays: [...getWorkdays(db)].sort() });
