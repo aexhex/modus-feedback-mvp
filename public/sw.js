@@ -33,3 +33,30 @@ self.addEventListener('fetch', (event) => {
         ?? (event.request.mode === 'navigate' ? caches.match('/') : Response.error())),
   );
 });
+
+// Push-уведомление: текст расшифровал браузер; по щелчку открывается обращение (или уже открытая вкладка).
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data?.text() };
+  }
+  event.waitUntil(self.registration.showNotification(data.title || 'Голос сотрудника', {
+    body: data.body || '', icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', data: { url: data.url || '/#/home' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || '/#/home', self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = windows.find((w) => new URL(w.url).origin === self.location.origin);
+    if (open) {
+      await open.navigate(url);
+      return open.focus();
+    }
+    return self.clients.openWindow(url);
+  })());
+});
