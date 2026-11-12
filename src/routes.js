@@ -17,7 +17,7 @@ import { listCategories, listUsers, createCategory, updateCategory, createUser, 
 import { uploadAttachment, readAttachment } from './attachments.js';
 import { listNotifications, markAllRead, listOutbox } from './notifications.js';
 import { setWatching, inviteWatcher, createB24Task } from './collab.js';
-import { getSlaDays, setSla, listHolidays, setHolidays, listCalendar, replaceCalendarYear } from './settings.js';
+import { getSlaDays, setSla, listHolidays, setHolidays, listCalendar, replaceCalendarYear, getWorkHours, setWorkHours } from './settings.js';
 import { listTargets, setTargets } from './targets.js';
 import { listSolutions } from './solutions.js';
 import { castVote, voteSummary } from './votes.js';
@@ -174,9 +174,19 @@ export function registerRoutes(router) {
 
   // canSwitch — можно ли вернуться к выбору роли (демо); при входе только через Битрикс24 — просто «Выйти».
   add('GET', '/api/me', ({ ctx, user }) => {
-    const mail = ctx.db.prepare('SELECT email, email_notify FROM users WHERE id = ?').get(user.id);
-    return { ...user, roleLabel: ROLES[user.role], canSwitch: listLoginAllowed(ctx), email: mail.email, emailNotify: Boolean(mail.email_notify) };
+    const own = ctx.db.prepare('SELECT email, phone, position, email_notify FROM users WHERE id = ?').get(user.id);
+    return {
+      ...user, roleLabel: ROLES[user.role], canSwitch: listLoginAllowed(ctx),
+      email: own.email, phone: own.phone, position: own.position, emailNotify: Boolean(own.email_notify),
+    };
   });
+  // Сотрудник сам правит рабочую почту и телефон; должность — только администратор или Битрикс24.
+  add('PATCH', '/api/me/contacts', ({ ctx, user, body }) => {
+    const changed = setContacts(ctx.db, user.id, { email: body.email ?? '', phone: body.phone ?? '' });
+    if (changed.length) audit(ctx.db, user.id, 'Контакты изменены', `${user.name} (сам): ${changed.join(', ')}`, ctx.now());
+    const own = ctx.db.prepare('SELECT email, phone FROM users WHERE id = ?').get(user.id);
+    return { email: own.email, phone: own.phone };
+  }, MUTATE);
   // Сотрудник сам решает, дублировать ли уведомления на почту.
   add('PATCH', '/api/me/notifications', ({ ctx, user, body }) => {
     if (typeof body.email !== 'boolean') throw badRequest('Ожидается email: true или false');
@@ -372,6 +382,12 @@ export function registerRoutes(router) {
     return listHolidays(ctx.db);
   }, MUTATE);
 
+  admin('GET', '/api/admin/work-hours', ({ ctx }) => getWorkHours(ctx.db));
+  admin('PATCH', '/api/admin/work-hours', ({ ctx, body, log }) => {
+    const hours = setWorkHours(ctx.db, body);
+    log('Рабочие часы изменены', hours ? `с ${hours.start}:00 до ${hours.end}:00` : 'сутки целиком');
+    return hours;
+  }, MUTATE);
   admin('GET', '/api/admin/calendar', ({ ctx }) => ({ ...listCalendar(ctx.db), source: describeCalendar(ctx) }));
   // Загрузка производственного календаря на год: праздники и рабочие выходные заменяют записи этого года.
   admin('POST', '/api/admin/calendar/import', async ({ ctx, body, log }) => {
