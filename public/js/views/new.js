@@ -94,9 +94,14 @@ export function renderNew(el, { me, meta, go, rerender }) {
   // Клиент из справочника 1С УТ — поле появляется, когда справочник загружен администратором.
   // Названия клиентов — данные 1С, их не переводим.
   const clientIn = h('select', { 'data-no-i18n': '' }, h('option', { value: '' }, t('— не связано с клиентом —')));
+  // Клиент из черновика: список загружается асинхронно, поэтому выбор восстанавливается после загрузки.
+  let draftClient = '';
   if (meta.hasCounterparties) {
     get('/counterparties')
-      .then((list) => clientIn.append(...list.map((c) => h('option', { value: String(c.id) }, c.inn ? `${c.name} · ${c.inn}` : c.name))))
+      .then((list) => {
+        clientIn.append(...list.map((c) => h('option', { value: String(c.id) }, c.inn ? `${c.name} · ${c.inn}` : c.name)));
+        if (draftClient) clientIn.value = draftClient;
+      })
       .catch((err) => toast(err.message, 'error'));
   }
   const anonIn = h('input', { type: 'checkbox' });
@@ -166,6 +171,7 @@ export function renderNew(el, { me, meta, go, rerender }) {
     const draft = {
       type, categoryId: categoryIn.value, title: titleIn.value, description: descIn.value,
       solution: solutionIn.value, priority: priorityIn.value, anon: anonIn.checked, isPublic: publicIn.checked,
+      counterpartyId: clientIn.value,
     };
     try {
       localStorage.setItem(draftKey, JSON.stringify(draft));
@@ -188,6 +194,8 @@ export function renderNew(el, { me, meta, go, rerender }) {
     solutionIn.value = draft.solution ?? '';
     if (meta.priorities.some((p) => p.key === draft.priority)) priorityIn.value = draft.priority;
     anonIn.checked = draft.anon === true;
+    draftClient = typeof draft.counterpartyId === 'string' ? draft.counterpartyId : '';
+    clientIn.value = draftClient;
     // Выбор типа выше включает публикацию для предложений; сохранённое решение автора важнее.
     if (typeof draft.isPublic === 'boolean') publicIn.checked = draft.isPublic;
     draftNote.hidden = false;

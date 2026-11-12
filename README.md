@@ -52,7 +52,7 @@ npm start
 | `npm start` | запуск на порту 3000 (`PORT=8080 npm start` — другой порт) |
 | `npm run reset` | удалить базу и вложения, заново загрузить демо-данные и запустить (то же самое — кнопка «Сбросить демо-данные» в «Настройках» администратора) |
 | `node server.js` | запуск без демо-режима: кнопка сброса данных отключена. `npm start` и `npm run reset` включают демо-режим (`DEMO_MODE=1`), Docker-образ — нет |
-| `npm test` | 163 серверных теста с отчётом о покрытии |
+| `npm test` | 165 серверных тестов с отчётом о покрытии |
 | `npm install`, затем `npx playwright install chromium`, затем `npm run test:e2e` | 61 сквозной тест интерфейса (Playwright) на отдельной чистой базе: сценарии, эмуляция телефона Android, автоматическая проверка доступности (axe-core, WCAG 2.1 AA) в светлой и тёмной теме |
 | `npm run screenshots` | пересоздать снимки экранов в `docs/screenshots/` |
 | `npm run voice`, затем `npm run video`, затем `npm run video:voice` | пересобрать видео защиты с озвучкой. `voice` — нейросетевой голос Microsoft (нужны `python -m pip install edge-tts` и интернет; текст реплик из `e2e/demo-voice.json` отправляется в облачный сервис синтеза), без интернета — `npm run voice:offline` (встроенный голос Windows, звучит заметно хуже). `video` записывает сценарий в темпе реплик, `video:voice` накладывает звук → `docs/demo/demo.webm` |

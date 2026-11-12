@@ -52,6 +52,10 @@ test('клиенты из 1С УТ: загрузка справочника и �
   await page.getByLabel('Кратко, о чём обращение').fill('Клиент ждёт подписанный договор больше недели');
   await page.getByLabel('Описание').fill('Договор с клиентом согласован, но подписанный экземпляр не отправлен уже больше недели.');
   await page.getByRole('combobox', { name: /^Клиент Необязательно/ }).selectOption({ label: 'ТОО «Альфа Монтаж» · 060140001234' });
+  // Черновик сохраняет выбранного клиента и после перезагрузки страницы.
+  await page.waitForTimeout(600);
+  await page.reload();
+  await expect(page.getByRole('combobox', { name: /^Клиент Необязательно/ })).toHaveValue(/\d+/);
   await page.getByRole('button', { name: 'Отправить обращение' }).click();
   await expect(page.locator('.facts')).toContainText('Клиент (1С УТ)');
   await expect(page.locator('.facts')).toContainText('ТОО «Альфа Монтаж»');
