@@ -4,7 +4,7 @@ import { loginAs, openTicket } from './helpers.js';
 const shot = (page, name) => page.screenshot({ path: `docs/screenshots/${name}.png` });
 
 test('снимки экранов для README', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await page.goto('/');
   await page.locator('.role-card').first().waitFor();
   await shot(page, '01-login');
@@ -103,4 +103,39 @@ test('снимки экранов для README', async ({ page }) => {
   const taskPanel = page.locator('.more-actions .stack', { hasText: 'Статус в Битрикс24' }).last();
   await taskPanel.scrollIntoViewIfNeeded();
   await page.locator('.more-actions').screenshot({ path: 'docs/screenshots/20-b24-task.png' });
+
+  // Вход через Битрикс24: страница входа демо-портала.
+  await page.evaluate(() => fetch('/api/session', { method: 'DELETE' }));
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Войти через Битрикс24' }).click();
+  await page.getByRole('heading', { name: 'Демо-портал Битрикс24' }).waitFor();
+  await shot(page, '21-b24-login');
+
+  // Система внутри портала: пункт левого меню открывает её во фрейме под сотрудником портала.
+  await page.goto('/demo-portal/b24/');
+  await page.getByRole('link', { name: /Ответственный за договоры/ }).click();
+  await page.getByRole('button', { name: 'Голос сотрудника' }).click();
+  await page.frameLocator('iframe[name="app"]').locator('.user-chip b').waitFor();
+  await shot(page, '22-portal-embed');
+
+  // Ручное связывание: кого система не связала по ФИО (администратор).
+  await loginAs(page, 'Администратор системы');
+  await page.goto('/#/admin');
+  await integrations.getByRole('button', { name: 'Загрузить оргструктуру' }).click();
+  const manual = integrations.locator('.sync-group', { hasText: 'Не связаны автоматически' });
+  await manual.waitFor();
+  await manual.screenshot({ path: 'docs/screenshots/23-manual-link.png' });
+
+  // Производственный календарь на год из источника.
+  const calendar = page.locator('section.card').filter({ has: page.getByRole('heading', { name: 'Производственный календарь', exact: true }) });
+  await calendar.getByLabel('Год календаря').selectOption('2027');
+  await calendar.getByRole('button', { name: 'Загрузить производственный календарь' }).click();
+  await page.locator('.toast-success').last().waitFor();
+  await page.locator('.toast').evaluateAll((toasts) => toasts.forEach((t) => t.remove()));
+  await calendar.screenshot({ path: 'docs/screenshots/24-calendar.png' });
+
+  // Письма-уведомления: демо-почта с письмами, отправленными по SMTP.
+  await page.goto('/demo-portal/mail/');
+  await page.locator('.demo-letter').first().waitFor();
+  await shot(page, '25-mail');
 });

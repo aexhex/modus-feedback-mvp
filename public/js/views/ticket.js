@@ -130,14 +130,20 @@ function factsCard(t, reload) {
     } catch (err) { toast(err.message, 'error'); }
   } }, t.isPublic ? 'Убрать из ленты' : 'Опубликовать в ленте');
   const fact = (k, v) => [h('dt', null, k), h('dd', null, v)];
+  // Имя и под ним рабочие контакты: должность, почта (письмо), телефон (звонок с телефона).
+  const person = (name, c) => (c ? h('div', { class: 'person' }, h('span', null, name),
+    h('span', { class: 'person-contacts' },
+      c.position && h('span', null, c.position),
+      c.email && h('a', { href: `mailto:${c.email}`, 'data-no-i18n': '' }, c.email),
+      c.phone && h('a', { href: `tel:${c.phone.replace(/[^+0-9]/g, '')}`, 'data-no-i18n': '' }, c.phone))) : name);
   return h('section', { class: 'card' },
     h('h3', null, 'Сведения'),
     h('dl', { class: 'facts' },
       fact('Категория', t.category.name),
-      fact('Автор', t.author ? t.author.name : 'Скрыт (анонимно)'),
+      fact('Автор', t.author ? person(t.author.name, t.contacts?.author) : 'Скрыт (анонимно)'),
       fact('Подразделение', t.department ?? 'Скрыто (анонимно)'),
       t.counterparty && [h('dt', null, 'Клиент (1С УТ)'), h('dd', { 'data-no-i18n': '' }, t.counterparty.name)],
-      fact('Ответственный', t.assignee?.name ?? 'Не назначен'),
+      fact('Ответственный', t.assignee ? person(t.assignee.name, t.contacts?.assignee) : 'Не назначен'),
       fact('Создано', fmtDate(t.createdAt)),
       fact('Первый ответ', t.firstResponseAt ? fmtDate(t.firstResponseAt) : `до ${fmtDate(t.firstResponseDue)}`),
       fact('Срок решения', fmtDate(t.dueAt)),
