@@ -104,3 +104,30 @@ test('часовой пояс подразделения задаётся в н�
   await page.getByRole('button', { name: 'Сохранить пояс' }).click();
   await expect(page.locator('.dept-tz > summary')).toContainText('Подразделения в другом поясе: 0');
 });
+
+test('хранение персональных данных: срок задаётся, уволенного можно обезличить', async ({ page }) => {
+  await loginAs(page, 'Администратор системы');
+  await page.goto('/#/admin');
+  const card = page.locator('section.card').filter({ has: page.getByRole('heading', { name: 'Хранение персональных данных', exact: true }) });
+  await card.getByLabel('Срок хранения данных уволенных').selectOption('12');
+  await card.getByRole('button', { name: 'Сохранить срок' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Срок хранения сохранён');
+  await expect(card.getByLabel('Срок хранения данных уволенных')).toHaveValue('12');
+  // Отдельный временный сотрудник: демо-сотрудников не трогаем, на них опираются другие тесты.
+  await page.evaluate(() => fetch('/api/admin/users', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Временный сотрудник', role: 'employee', department: 'Склад' }),
+  }));
+  await page.reload();
+  // Отключить и обезличить — по его просьбе.
+  await page.getByLabel('Доступ: Временный сотрудник').uncheck();
+  await expect(page.locator('.toast-success').last()).toContainText('доступ отключён');
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: 'Обезличить: Временный сотрудник' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Персональные данные обезличены');
+  await expect(page.locator('.users-table')).toContainText('Бывший сотрудник №');
+  await expect(page.locator('.users-table')).not.toContainText('Временный сотрудник');
+  // Вернуть срок как было.
+  await card.getByLabel('Срок хранения данных уволенных').selectOption('');
+  await card.getByRole('button', { name: 'Сохранить срок' }).click();
+});

@@ -16,6 +16,8 @@ import { createDemoSmtp } from './integrations/demo-smtp.js';
 import { pollTasks } from './integrations/b24-tasks.js';
 import { runDailySync } from './integrations/daily.js';
 import { backup, backupKeep } from './backup.js';
+import { runRetention } from './retention.js';
+import { audit } from './audit.js';
 import { vapidKeys } from './integrations/webpush.js';
 import {
   HttpError, createRouter, readJson, readForm, ok, fail, sendFile, parseCookies, clientIp, pageHeaders,
@@ -222,6 +224,21 @@ export function createApp({
     every.unref();
     server.on('close', () => { clearTimeout(first); clearInterval(every); });
   }
+
+  // Раз в сутки: обезличивание уволенных, у которых истёк срок хранения (если срок задан).
+  const retention = () => {
+    try {
+      const count = runRetention(db, now());
+      if (count) audit(db, null, 'Персональные данные обезличены', `по сроку хранения: ${count}`, now());
+    } catch (error) {
+      logger.error('[retention]', error);
+    }
+  };
+  const retentionFirst = setTimeout(retention, DAILY_SYNC_FIRST_MS);
+  const retentionEvery = setInterval(retention, DAILY_SYNC_MS);
+  retentionFirst.unref();
+  retentionEvery.unref();
+  server.on('close', () => { clearTimeout(retentionFirst); clearInterval(retentionEvery); });
 
   if (backupDir) {
     const daily = () => {

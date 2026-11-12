@@ -36,6 +36,7 @@ import { submitClientFeedback, listClientFeedback, markClientFeedback } from './
 import { buildHome } from './home.js';
 import { registerIntegrationRoutes } from './integrations/routes.js';
 import { setContacts } from './contacts.js';
+import { getRetention, setRetention, dueForAnonymization, anonymizeUser, runRetention, RETENTION_OPTIONS } from './retention.js';
 import { isPushEndpoint } from './integrations/webpush.js';
 import { fetchCalendarYear, validCalendarRequest, CALENDAR_COUNTRIES } from './integrations/calendar.js';
 
@@ -474,6 +475,27 @@ export function registerRoutes(router) {
   }, MUTATE);
   admin('PATCH', '/api/admin/users/:id', ({ ctx, user, params, body, log }) => {
     log('Пользователь изменён', updateUser(ctx.db, user, params.id, body, ctx.now()));
+    return listUsers(ctx.db, { includeInactive: true, withB24: true });
+  }, MUTATE);
+
+  // Хранение персональных данных уволенных: срок, ручной прогон, обезличивание одного сотрудника.
+  // В журнал пишется только новое обозначение («Бывший сотрудник №…»), не имя.
+  admin('GET', '/api/admin/retention', ({ ctx }) => ({
+    months: getRetention(ctx.db), options: RETENTION_OPTIONS, due: dueForAnonymization(ctx.db, ctx.now()).length,
+  }));
+  admin('PATCH', '/api/admin/retention', ({ ctx, body, log }) => {
+    const months = setRetention(ctx.db, body);
+    log('Срок хранения данных уволенных изменён', months ? `${months} мес.` : 'не обезличивать');
+    return { months, options: RETENTION_OPTIONS, due: dueForAnonymization(ctx.db, ctx.now()).length };
+  }, MUTATE);
+  admin('POST', '/api/admin/retention/run', ({ ctx, log }) => {
+    const count = runRetention(ctx.db, ctx.now());
+    if (count) log('Персональные данные обезличены', `по сроку хранения: ${count}`);
+    return { anonymized: count, due: 0 };
+  }, MUTATE);
+  admin('POST', '/api/admin/users/:id/anonymize', ({ ctx, params, log }) => {
+    const alias = anonymizeUser(ctx.db, params.id, ctx.now());
+    log('Персональные данные обезличены', alias);
     return listUsers(ctx.db, { includeInactive: true, withB24: true });
   }, MUTATE);
 
