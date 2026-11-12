@@ -83,3 +83,18 @@ test('администратор меняет сроки SLA — подсказ�
   await page.goto('/#/new');
   await expect(page.locator('form')).toContainText('высокий — 2');
 });
+
+test('канбан: колонки одной высоты, доска и её прокрутка помещаются в окно', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 850 });
+  await loginAs(page, 'Директор по развитию');
+  await page.goto('/#/kanban');
+  await expect(page.locator('.kb-col')).toHaveCount(6);
+  const layout = await page.evaluate(() => {
+    const board = document.querySelector('.kanban').getBoundingClientRect();
+    const heights = [...document.querySelectorAll('.kb-col')].map((c) => Math.round(c.getBoundingClientRect().height));
+    return { bottom: board.bottom, heights, page: document.documentElement.scrollHeight };
+  });
+  expect(new Set(layout.heights).size).toBe(1);
+  expect(layout.bottom).toBeLessThanOrEqual(850);
+  expect(layout.page).toBeLessThanOrEqual(850);
+});
