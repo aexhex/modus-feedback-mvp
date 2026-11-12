@@ -7,6 +7,7 @@ import { seedIfEmpty } from './seed.js';
 import { seedTemplates } from './templates.js';
 import { escalateOverdue } from './escalation.js';
 import { audit } from './audit.js';
+import { markOutboxHistory } from './integrations/delivery.js';
 
 export function resetDemo(db, uploadsDir, actorName, nowIso) {
   const tables = db
@@ -24,6 +25,7 @@ export function resetDemo(db, uploadsDir, actorName, nowIso) {
       seedIfEmpty(db, nowIso, uploadsDir);
       seedTemplates(db);
       escalateOverdue(db, nowIso);
+      markOutboxHistory(db);
       audit(db, null, 'Демо-данные сброшены', `выполнил: ${actorName}`, nowIso);
     });
   } finally {

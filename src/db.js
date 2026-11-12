@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS outbox (
   payload TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS counterparties (
+  id INTEGER PRIMARY KEY,
+  ref_key TEXT NOT NULL UNIQUE,
+  code TEXT,
+  name TEXT NOT NULL,
+  inn TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  synced_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -183,6 +192,22 @@ export function openDatabase(path) {
   // Лента идей и управление пользователями появились позже первой версии схемы.
   ensureColumn(db, 'tickets', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'users', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
+  // Интеграции: связь с пользователем Битрикс24, доставка журнала отправки, клиент из 1С УТ.
+  ensureColumn(db, 'users', 'b24_id', 'INTEGER');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_b24 ON users(b24_id) WHERE b24_id IS NOT NULL');
+  ensureColumn(db, 'outbox', 'user_id', 'INTEGER');
+  ensureColumn(db, 'outbox', 'ticket_id', 'INTEGER');
+  // Записи, сделанные до появления доставки, — история: их не отправляем на портал задним числом.
+  inTransaction(db, () => {
+    if (ensureColumn(db, 'outbox', 'status', "TEXT NOT NULL DEFAULT 'pending'")) db.exec("UPDATE outbox SET status = 'simulated'");
+  });
+  ensureColumn(db, 'outbox', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'outbox', 'next_at', 'INTEGER');
+  ensureColumn(db, 'outbox', 'error', 'TEXT');
+  ensureColumn(db, 'outbox', 'external_id', 'TEXT');
+  ensureColumn(db, 'outbox', 'sent_at', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status)');
+  ensureColumn(db, 'tickets', 'counterparty_id', 'INTEGER REFERENCES counterparties(id)');
   return db;
 }
 
@@ -190,6 +215,7 @@ export function openDatabase(path) {
 function ensureColumn(db, table, column, definition) {
   const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  return !exists;
 }
 
 // Выполняет fn в транзакции; при ошибке откатывает изменения.

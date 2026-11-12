@@ -77,14 +77,14 @@ export function buildDigest(db, nowIso) {
   return { ...digest, text: digestText(digest) };
 }
 
-// ИМИТАЦИЯ рассылки: сводка уходит руководителям и администраторам как вызов im.notify в журнал outbox.
+// Рассылка: сводка уходит руководителям и администраторам вызовом im.notify через журнал outbox.
 export function sendDigest(db, nowIso) {
   const { text } = buildDigest(db, nowIso);
   const recipients = db
-    .prepare("SELECT name FROM users WHERE role IN ('manager','admin') AND is_active = 1 ORDER BY name")
+    .prepare("SELECT id, name FROM users WHERE role IN ('manager','admin') AND is_active = 1 ORDER BY name")
     .all();
   for (const r of recipients) {
-    logOutbox(db, { method: 'im.notify', recipient: r.name, payload: { MESSAGE: text, LINK: '/#/digest' }, now: nowIso });
+    logOutbox(db, { method: 'im.notify', recipient: r.name, userId: r.id, payload: { MESSAGE: text, LINK: '/#/digest' }, now: nowIso });
   }
   return recipients.length;
 }

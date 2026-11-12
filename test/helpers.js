@@ -11,7 +11,7 @@ export const TEST_NOW = '2026-11-11T09:00:00.000Z';
 export async function startTestApp(options = {}) {
   let current = TEST_NOW;
   const uploadsDir = mkdtempSync(join(tmpdir(), 'fb-test-'));
-  const { server, db } = createApp({
+  const { server, db, delivery, demoPortal } = createApp({
     dbPath: ':memory:', uploadsDir, publicDir: join(import.meta.dirname, '..', 'public'), logger: silentLogger,
     now: () => current, escalationIntervalMs: 0, ...options,
   });
@@ -44,5 +44,5 @@ export async function startTestApp(options = {}) {
   }
 
   const setNow = (iso) => { current = iso; };
-  return { base, db, as, userId, ticketId, request, setNow, uploadsDir, close: () => new Promise((r) => server.close(r)) };
+  return { base, db, delivery, demoPortal, as, userId, ticketId, request, setNow, uploadsDir, close: () => new Promise((r) => server.close(r)) };
 }
