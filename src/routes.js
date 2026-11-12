@@ -281,6 +281,7 @@ export function registerRoutes(router) {
   // Сброс удаляет все сессии, поэтому администратор после него попадает на экран входа.
   admin('POST', '/api/admin/demo-reset', ({ ctx, user, res }) => {
     if (!ctx.demoMode) throw forbidden('Сброс данных доступен только в демо-режиме');
+    ctx.integrations.delivery.invalidate();
     resetDemo(ctx.db, ctx.uploadsDir, user.name, ctx.now());
     res.setHeader('Set-Cookie', cookie('', 0));
     return { reset: true };

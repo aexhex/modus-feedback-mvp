@@ -191,7 +191,7 @@ describe('Битрикс24 через демо-портал', () => {
     let row = outboxRow(app, 'user_id = ?', author);
     assert.equal(row.status, 'pending');
     assert.equal(row.attempts, 1);
-    assert.match(row.error, /Пользователь не найден/);
+    assert.match(row.error, /уведомление не создано/);
 
     app.db.prepare('UPDATE outbox SET attempts = ?, next_at = NULL WHERE id = ?').run(MAX_ATTEMPTS - 1, row.id);
     await app.delivery.kick();
@@ -250,6 +250,46 @@ describe('защита от сбоев', () => {
   });
 });
 
+describe('задачи и сброс данных', () => {
+  it('задача без сопоставленного ответственного ждёт оргструктуры, затем создаётся', async () => {
+    const app = await startTestApp({ demoMode: true });
+    try {
+      const id = app.ticketId('A-009');
+      const handler = await app.as('Ответственный за договоры');
+      await handler.post(`/api/tickets/${id}/b24-task`);
+      await app.delivery.idle();
+      const row = outboxRow(app, "method = 'tasks.task.add'");
+      assert.equal(row.status, 'skipped');
+      const admin = await app.as('Администратор системы');
+      await admin.post('/api/admin/integrations/b24/org-apply');
+      await app.delivery.idle();
+      assert.equal(outboxRow(app, 'id = ?', row.id).status, 'sent');
+      assert.match((await handler.get(`/api/tickets/${id}`)).json.data.b24Task.text, /№24\d\d создана/);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('ответ на отправку, начатую до сброса данных, не попадает в новый датасет', async () => {
+    const app = await startTestApp({ demoMode: true });
+    try {
+      const admin = await app.as('Администратор системы');
+      await admin.post('/api/admin/integrations/b24/org-apply');
+      await app.delivery.idle();
+      const handler = await app.as('Ответственный за договоры');
+      const id = app.ticketId('A-009');
+      app.db.prepare("INSERT INTO outbox (channel, method, recipient, payload, user_id, ticket_id, created_at) VALUES ('bitrix24', 'tasks.task.add', 'x', ?, ?, ?, '2026-11-11')")
+        .run(JSON.stringify({ TITLE: 't', MESSAGE: 'm' }), app.userId('Ответственный за договоры'), id);
+      const sending = app.delivery.kick();
+      app.delivery.invalidate();
+      await sending;
+      assert.ok(!(await handler.get(`/api/tickets/${id}`)).json.data.b24Task, 'событие задачи не записано после сброса');
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe('1С УТ через демо-портал', () => {
   let app;
   let token;
@@ -300,7 +340,26 @@ describe('1С УТ через демо-портал', () => {
 
     const since = (await (await pull({ authorization: `Bearer ${token}` }, `?since=${encodeURIComponent(anon.createdAt)}`)).json()).data;
     assert.ok(since.length >= 1 && since.length < data.length);
-    assert.ok(since.every((t) => t.updatedAt >= anon.createdAt));
+    assert.ok(since.every((t) => t.changedAt >= anon.createdAt));
+
+    // «У меня тоже» не меняет updated_at, но выгрузка с since должна увидеть новое число поддержавших.
+    const later = '2026-11-12T10:00:00.000Z';
+    app.setNow(later);
+    const other = await app.as('Менеджер по продажам');
+    const managerId = app.userId('Менеджер по продажам');
+    const { code: oldCode } = app.db.prepare(`SELECT code FROM tickets t WHERE type = 'problem' AND status IN ('new','in_review','in_progress')
+      AND author_id != ? AND NOT EXISTS (SELECT 1 FROM supports s WHERE s.ticket_id = t.id AND s.user_id = ?) AND id != ? ORDER BY id LIMIT 1`)
+      .get(managerId, managerId, anon.id);
+    const oldTicket = data.find((t) => t.code === oldCode);
+    const oldId = app.ticketId(oldCode);
+    const sup = await other.post(`/api/tickets/${oldId}/support`);
+    assert.equal(sup.status, 200, JSON.stringify(sup.json) + oldTicket.code);
+    // Объединение дубликата: запись остаётся в выгрузке с duplicateOf, чтобы 1С исключила её.
+    const handler = await app.as('Ответственный за процессы');
+    assert.equal((await handler.post(`/api/tickets/${anon.id}/duplicate`, { code: oldTicket.code })).status, 200);
+    const fresh = (await (await pull({ authorization: `Bearer ${token}` }, `?since=${encodeURIComponent(later)}`)).json()).data;
+    assert.equal(fresh.find((t) => t.code === oldTicket.code).supporters, oldTicket.supporters + 2);
+    assert.equal(fresh.find((t) => t.code === anon.code).duplicateOf, oldTicket.code);
   });
 
   it('недоступные портал и база 1С — понятная ошибка 502', async () => {

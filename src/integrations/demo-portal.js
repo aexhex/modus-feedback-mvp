@@ -73,7 +73,8 @@ export function createDemoPortal() {
     'department.get': () => page(departments, 0),
     'user.get': (p) => page(users, p.start),
     'im.notify': (p) => {
-      if (!users.some((u) => u.ID === String(p.USER_ID) && u.ACTIVE)) return { error: 'USER_NOT_FOUND', error_description: 'Пользователь не найден' };
+      // Как настоящий портал: неизвестному или отключённому получателю — result: false без ошибки.
+      if (!users.some((u) => u.ID === String(p.USER_ID) && u.ACTIVE)) return { result: false };
       nextMessageId += 1;
       return { result: nextMessageId };
     },
