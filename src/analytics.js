@@ -4,6 +4,7 @@ import { BASE_SELECT, isFinal, slaState } from './tickets-query.js';
 import { tokenize, jaccard } from './similarity.js';
 import { badRequest } from './http.js';
 import { getTargets, evaluateTargets } from './targets.js';
+import { tzOffsetMs } from './settings.js';
 
 const HOUR_MS = 3600 * 1000;
 const REPEAT_WINDOW_DAYS = 90;
@@ -101,20 +102,19 @@ function problemMap(db, rows, nowIso) {
   return { departments, categories, max };
 }
 
-// Динамика за последние WEEKS недель (неделя начинается в понедельник по московскому времени).
+// Динамика за последние WEEKS недель (неделя начинается в понедельник по времени компании).
 const WEEKS = 8;
 const DAY_MS = 24 * HOUR_MS;
-const TZ_OFFSET_MS = 3 * HOUR_MS;
 
-function weekStartMs(ms) {
-  const local = ms + TZ_OFFSET_MS;
+function weekStartMs(ms, offsetMs) {
+  const local = ms + offsetMs;
   const dayStart = Math.floor(local / DAY_MS) * DAY_MS;
   const daysSinceMonday = (new Date(dayStart).getUTCDay() + 6) % 7;
-  return dayStart - daysSinceMonday * DAY_MS - TZ_OFFSET_MS;
+  return dayStart - daysSinceMonday * DAY_MS - offsetMs;
 }
 
-function weeklyDynamics(rows, nowIso) {
-  const currentWeek = weekStartMs(new Date(nowIso).getTime());
+function weeklyDynamics(rows, nowIso, offsetMs) {
+  const currentWeek = weekStartMs(new Date(nowIso).getTime(), offsetMs);
   return Array.from({ length: WEEKS }, (_, i) => {
     const start = currentWeek - (WEEKS - 1 - i) * 7 * DAY_MS;
     const end = start + 7 * DAY_MS;
@@ -234,7 +234,7 @@ export function buildAnalytics(db, nowIso) {
     byDepartment: countBy(rows, (r) => r.department),
     repeatedTopics: repeatedTopics(rows, nowIso),
     similarPairs: similarPairs(rows),
-    weekly: weeklyDynamics(rows, nowIso),
+    weekly: weeklyDynamics(rows, nowIso, tzOffsetMs(db)),
     workload: workload(rows, nowIso),
     timeInStatus: timeInStatus(db),
     overdue,
@@ -246,11 +246,11 @@ const REPORT_DEFAULT_DAYS = 30;
 const REPORT_MAX_DAYS = 366;
 const REPORT_TOP = 5;
 
-// Граница суток по московскому времени для даты вида ГГГГ-ММ-ДД.
-function dayBoundary(value, endOfDay) {
+// Граница суток по времени компании для даты вида ГГГГ-ММ-ДД.
+function dayBoundary(value, endOfDay, offsetMs) {
   const ms = DATE_RE.test(value) ? Date.parse(`${value}T00:00:00.000Z`) : Number.NaN;
   if (Number.isNaN(ms)) throw badRequest('Дата периода указывается в формате ГГГГ-ММ-ДД');
-  return new Date(ms - TZ_OFFSET_MS + (endOfDay ? DAY_MS : 0)).toISOString();
+  return new Date(ms - offsetMs + (endOfDay ? DAY_MS : 0)).toISOString();
 }
 
 // Итог обращения: «реализовано» или «отклонено». Статус «закрыто» — лишь завершение после итога,
@@ -299,12 +299,13 @@ function engagement(db, from, to) {
 }
 
 export function buildReport(db, query, nowIso) {
-  const today = new Date(new Date(nowIso).getTime() + TZ_OFFSET_MS).toISOString().slice(0, 10);
+  const offsetMs = tzOffsetMs(db);
+  const today = new Date(new Date(nowIso).getTime() + offsetMs).toISOString().slice(0, 10);
   const toDate = query.to || today;
-  const to = dayBoundary(toDate, true);
+  const to = dayBoundary(toDate, true, offsetMs);
   const fromDate = query.from
-    || new Date(new Date(to).getTime() + TZ_OFFSET_MS - REPORT_DEFAULT_DAYS * DAY_MS).toISOString().slice(0, 10);
-  const from = dayBoundary(fromDate, false);
+    || new Date(new Date(to).getTime() + offsetMs - REPORT_DEFAULT_DAYS * DAY_MS).toISOString().slice(0, 10);
+  const from = dayBoundary(fromDate, false, offsetMs);
   if (from >= to) throw badRequest('Начало периода позже его конца');
   if (new Date(to) - new Date(from) > REPORT_MAX_DAYS * DAY_MS) throw badRequest('Период не длиннее года');
 

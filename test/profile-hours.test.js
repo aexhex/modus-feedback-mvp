@@ -91,3 +91,71 @@ describe('рабочие часы в сроках', () => {
     }
   });
 });
+
+describe('часовой пояс компании', () => {
+  it('администратор выбирает пояс: сроки новых обращений и границы отчёта считаются по нему', async () => {
+    const app = await startTestApp();
+    try {
+      const admin = await app.as('Администратор системы');
+      assert.equal((await admin.get('/api/admin/timezone')).json.data.offset, 3, 'в тестах — Москва (test/setup.js)');
+      await admin.patch('/api/admin/work-hours', { enabled: true, start: 9, end: 18 });
+      const create = async (title) => {
+        const emp = await app.as('Сотрудник офиса');
+        const res = await emp.post('/api/tickets', {
+          type: 'idea', categoryId: app.db.prepare("SELECT id FROM categories WHERE name = 'Регламенты'").get().id,
+          title, description: 'Срок считается по рабочим часам в поясе компании.', priority: 'low',
+        });
+        return app.db.prepare('SELECT first_response_due FROM tickets WHERE id = ?').get(res.json.data.id).first_response_due;
+      };
+      // 05:00 UTC: в Москве 8:00 — рабочий день ещё не начался, в Казахстане 10:00 — уже идёт.
+      app.setNow('2026-11-11T05:00:00.000Z');
+      const moscow = await create('Проверка пояса: Москва');
+      assert.equal((await admin.patch('/api/admin/timezone', { offset: 15 })).status, 400);
+      assert.equal((await admin.patch('/api/admin/timezone', { offset: 5 })).json.data.offset, 5);
+      const almaty = await create('Проверка пояса: Казахстан');
+      // Москва: отсчёт с 9:00 МСК, 5 полных дней по 9 часов → вторник 17 ноября 18:00 МСК (15:00 UTC).
+      // Казахстан: отсчёт сразу с 10:00 — к вечеру вторника 44 часа, ещё 1 час → среда 10:00 (05:00 UTC).
+      assert.equal(moscow, '2026-11-17T15:00:00.000Z');
+      assert.equal(almaty, '2026-11-18T05:00:00.000Z');
+      assert.ok((await admin.get('/api/admin/audit')).json.data.some((a) => a.action === 'Часовой пояс изменён' && a.details === 'UTC+5'));
+      // 31 октября 20:00 UTC — это уже 1 ноября 01:00 в Казахстане, но ещё 31 октября 23:00 в Москве.
+      app.db.prepare("UPDATE tickets SET created_at = '2026-10-31T20:00:00.000Z' WHERE code = 'A-001'").run();
+      const onNovFirst = async () => (await admin.get('/api/tickets?scope=all&from=2026-11-01&to=2026-11-01&q=A-001')).json.data.length;
+      assert.equal(await onNovFirst(), 1, 'по Казахстану обращение подано 1 ноября');
+      await admin.patch('/api/admin/timezone', { offset: 3 });
+      assert.equal(await onNovFirst(), 0, 'по Москве — ещё 31 октября');
+      const emp = await app.as('Сотрудник офиса');
+      assert.equal((await emp.patch('/api/admin/timezone', { offset: 3 })).status, 403);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe('часовой пояс подразделения', () => {
+  it('срок считается по поясу подразделения ответственного; остальные — по поясу компании', async () => {
+    const app = await startTestApp();
+    try {
+      const admin = await app.as('Администратор системы');
+      await admin.patch('/api/admin/work-hours', { enabled: true, start: 9, end: 18 });
+      app.setNow('2026-11-11T05:00:00.000Z'); // 8:00 в Москве, 10:00 в Казахстане
+      const regl = app.db.prepare("SELECT id FROM categories WHERE name = 'Регламенты'").get().id;
+      const create = async (title) => {
+        const emp = await app.as('Сотрудник офиса');
+        const res = await emp.post('/api/tickets', { type: 'idea', categoryId: regl, title, description: 'Проверка пояса подразделения.', priority: 'low' });
+        return app.db.prepare('SELECT first_response_due FROM tickets WHERE id = ?').get(res.json.data.id).first_response_due;
+      };
+      assert.equal(await create('Пояс компании: Москва'), '2026-11-17T15:00:00.000Z');
+      // Ответственный за «Регламенты» — из «Офиса процессов»: этот филиал живёт по Казахстану.
+      const res = await admin.patch('/api/admin/timezone', { offset: 3, departments: { 'Офис процессов': 5, Бухгалтерия: null } });
+      assert.deepEqual(res.json.data.departments, { 'Офис процессов': 5 });
+      assert.ok(res.json.data.departmentList.includes('Офис процессов'));
+      assert.equal(await create('Пояс подразделения: Казахстан'), '2026-11-18T05:00:00.000Z');
+      assert.equal((await admin.patch('/api/admin/timezone', { offset: 3, departments: { 'Офис процессов': 99 } })).status, 400);
+      // Пояс подразделения, совпадающий с поясом компании, не хранится отдельно.
+      assert.deepEqual((await admin.patch('/api/admin/timezone', { offset: 5, departments: { 'Офис процессов': 5 } })).json.data.departments, {});
+    } finally {
+      await app.close();
+    }
+  });
+});
