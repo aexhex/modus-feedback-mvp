@@ -621,7 +621,13 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 :root[data-theme="dark"] .kpi.alert .kpi-label { color: #ffe3e3; }
 
 /* Переключатель темы до входа в систему. */
-.login-top { display: flex; justify-content: flex-end; margin: -32px 0 8px; }
+.login-top { display: flex; justify-content: space-between; margin: -32px 0 20px; }
+.login-top-tools { display: flex; gap: 10px; align-items: center; }
+/* Полный логотип на экране входа: знак и надпись в две строки, как в фирменном логотипе. */
+.brand-logo { display: flex; align-items: center; gap: 10px; color: #082742; }
+.brand-logo-mark { width: 46px; height: 46px; flex: none; }
+.brand-logo-text { display: flex; flex-direction: column; font: 800 18px/1 var(--font-display); letter-spacing: .03em; }
+:root[data-theme="dark"] .brand-logo { color: #fff; }
 .date-filter { margin: -6px 0 14px; gap: 14px; }
 .date-filter input[type=date] { width: auto; }
 
