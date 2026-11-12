@@ -1,6 +1,7 @@
 // Вход в два шага: сначала роль (четыре крупные карточки), затем конкретный человек.
 // Если в роли один пользователь, вход выполняется сразу — так демо проходит быстрее.
 import { h, mount, toast, themeToggle } from '../dom.js';
+import { langSwitch } from '../i18n.js';
 import { get } from '../api.js';
 
 const ROLE_INFO = {
@@ -68,5 +69,5 @@ export async function renderLogin(root, { onLogin }) {
   }
 
   showRoles();
-  mount(root, h('div', { class: 'login' }, h('div', { class: 'login-top' }, themeToggle()), hero(), stage));
+  mount(root, h('div', { class: 'login' }, h('div', { class: 'login-top' }, langSwitch(), themeToggle()), hero(), stage));
 }

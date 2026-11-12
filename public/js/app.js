@@ -1,4 +1,5 @@
 // Оболочка SPA: сессия, навигация по ролям, хэш-роутер, колокольчик уведомлений.
+import { locale, langSwitch } from './i18n.js';
 import { h, mount, toast, icon, themeToggle } from './dom.js';
 import { get, post, del } from './api.js';
 import { renderLogin } from './views/login.js';
@@ -14,6 +15,7 @@ import { renderSurveys } from './views/surveys.js';
 import { renderClients, renderClientForm } from './views/clients.js';
 import { renderReport } from './views/report.js';
 import { renderDigest } from './views/digest.js';
+import { renderSolutions } from './views/solutions.js';
 
 const NOTIFY_POLL_MS = 30_000;
 const root = document.getElementById('app');
@@ -29,6 +31,7 @@ const ROUTES = [
   { re: /^\/tickets$/, view: renderList },
   { re: /^\/t\/(\d+)$/, view: renderTicket },
   { re: /^\/board$/, view: renderBoard },
+  { re: /^\/solutions$/, view: renderSolutions },
   { re: /^\/analytics$/, view: renderAnalytics, allow: isOversight },
   { re: /^\/admin$/, view: renderAdmin, allow: (me) => me.role === 'admin' },
   { re: /^\/surveys(?:\/(\d+)(\/results)?)?$/, view: renderSurveys },
@@ -73,6 +76,7 @@ function navGroups(me) {
     { title: 'Идеи', items: [
       { href: '#/tickets?scope=feed', label: 'Идеи коллег' },
       { href: '#/board', label: 'Итоги внедрения' },
+      { href: '#/solutions', label: 'База решений' },
     ] },
     { title: 'Аналитика', items: [
       isOversight(me) && { href: '#/analytics', label: 'Показатели' },
@@ -99,7 +103,7 @@ function bell() {
       : items.map((n) => h('a', {
         href: n.ticket_id ? `#/t/${n.ticket_id}` : '#', class: n.is_read ? '' : 'unread',
         onclick: () => { panel.hidden = true; },
-      }, n.text, h('div', { class: 't-sub' }, new Date(n.created_at).toLocaleString('ru-RU')))));
+      }, n.text, h('div', { class: 't-sub' }, new Date(n.created_at).toLocaleString(locale())))));
     panel.hidden = false;
     await post('/notifications/read');
     count.hidden = true;
@@ -151,6 +155,7 @@ function shell(me, path, query) {
       h('div', { class: 'side-foot' }, 'MVP · демонстрационные данные')),
     h('div', { class: 'main' },
       h('header', { class: 'topbar' },
+        langSwitch(),
         themeToggle(),
         bell(),
         h('div', { class: 'user-chip' }, h('b', null, me.name), h('span', null, `${me.roleLabel} · ${me.department}`)),

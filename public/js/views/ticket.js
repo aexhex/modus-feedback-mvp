@@ -1,6 +1,7 @@
 import { h, mount, toast, badge, slaChip, fmtDate, fileToBase64, filePicker, field } from '../dom.js';
 import { get, post, patch } from '../api.js';
 import { processingCard } from './ticket-panels.js';
+import { ticketStepper } from './ticket-stepper.js';
 
 const EVENT_TITLES = {
   created: () => 'Обращение создано',
@@ -179,6 +180,7 @@ export async function renderTicket(el, { me, meta, params, rerender }) {
       h('div', { class: 'row' }, h('span', { class: 't-code' }, t.code), badge('status', t.status, t.statusLabel),
         badge('type', t.type, t.typeLabel), badge('priority', t.priority, t.priorityLabel), slaChip(t), t.isAnonymous && h('span', { class: 'chip' }, 'Анонимно'), t.isPublic && h('span', { class: 'chip' }, 'В «Идеях коллег»')),
       h('h1', null, t.title)),
+    ticketStepper(t),
     h('div', { class: 'grid-2' },
       h('div', null,
         t.resolution && h('section', { class: `card resolution ${t.status === 'rejected' ? 'rejected' : ''}` },

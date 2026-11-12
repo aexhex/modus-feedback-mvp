@@ -1,5 +1,6 @@
 // Графики на чистом SVG. Правила: одна ось на график, тонкие метки, легенда для двух рядов,
 // подсказка при наведении и фокусе, табличное представление тех же данных.
+import { locale, t } from './i18n.js';
 import { h, svg } from './dom.js';
 
 const W = 640;
@@ -12,7 +13,7 @@ const BAR_W = 14;
 const BAR_GAP = 2;
 const BAR_RADIUS = 4;
 
-const dayFmt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Moscow' });
+const dayFmt = new Intl.DateTimeFormat(locale(), { day: '2-digit', month: '2-digit', timeZone: 'Europe/Moscow' });
 const weekLabel = (iso) => dayFmt.format(new Date(iso));
 const weekRange = (iso) => {
   const end = new Date(new Date(iso).getTime() + 6 * 24 * 3600_000);
@@ -52,6 +53,15 @@ function bar(x, value, max, cls) {
   return svg('path', { d, class: cls });
 }
 
+// Текст строки подсказки для экранного диктора: подпись и значение через двоеточие («Подано: 4», а не «Подано4»).
+function spokenText(node) {
+  const parts = [];
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue.trim()) parts.push(n.nodeValue.trim());
+  // Части переводятся по отдельности: иначе шаблон «Неделя {1}» захватил бы всю подпись целиком.
+  return parts.map(t).join(': ');
+}
+
 // Невидимые зоны наведения на всю высоту: цель крупнее самой метки, доступна с клавиатуры.
 function hitZones(weeks, tooltip, describe) {
   const slot = PLOT_W / weeks.length;
@@ -64,7 +74,7 @@ function hitZones(weeks, tooltip, describe) {
     const hide = () => { tooltip.hidden = true; };
     return svg('rect', {
       x: PAD.left + slot * i, y: PAD.top, width: slot, height: PLOT_H, class: 'ch-hit', tabindex: 0, role: 'img',
-      'aria-label': describe(w).map((n) => n.textContent).join(', '),
+      'aria-label': describe(w).map(spokenText).join(', '),
       onmouseenter: show, onmouseleave: hide, onfocus: show, onblur: hide,
     });
   });

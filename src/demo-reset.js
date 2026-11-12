@@ -21,7 +21,7 @@ export function resetDemo(db, uploadsDir, actorName, nowIso) {
   try {
     inTransaction(db, () => {
       for (const table of tables) db.exec(`DELETE FROM "${table}"`);
-      seedIfEmpty(db, nowIso);
+      seedIfEmpty(db, nowIso, uploadsDir);
       seedTemplates(db);
       escalateOverdue(db, nowIso);
       audit(db, null, 'Демо-данные сброшены', `выполнил: ${actorName}`, nowIso);

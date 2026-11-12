@@ -1,4 +1,5 @@
 // DOM-хелперы. Весь пользовательский текст вставляется через textContent — защита от XSS.
+import { locale } from './i18n.js';
 
 export function h(tag, props, ...children) {
   const el = document.createElement(tag);
@@ -29,8 +30,9 @@ export function mount(container, ...children) {
   append(container, children);
 }
 
-const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-const shortFmt = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short' });
+const dateFmt = new Intl.DateTimeFormat(locale(), { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+// В Chromium нет казахских названий месяцев (выходит «M11 07») — для казахского короткая дата числом.
+const shortFmt = new Intl.DateTimeFormat(locale(), locale() === 'kk-KZ' ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: 'short' });
 
 export const fmtDate = (iso) => (iso ? dateFmt.format(new Date(iso)) : '—');
 export const fmtShort = (iso) => (iso ? shortFmt.format(new Date(iso)) : '—');
