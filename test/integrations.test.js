@@ -169,7 +169,9 @@ describe('Битрикс24 через демо-портал', () => {
     const id = app.ticketId('A-009');
     const handler = await app.as('Ответственный за договоры');
     const created = (await handler.post(`/api/tickets/${id}/b24-task`)).json.data;
-    assert.equal(created.b24Task.text, 'Задача отправлена в Битрикс24, срок — по SLA обращения');
+    // Ответ ждёт портал: номер задачи и статус видны сразу, без обновления страницы.
+    assert.match(created.b24Task.text, /^Задача в Битрикс24 №24\d\d создана$/);
+    assert.equal(created.b24Task.task.statusLabel, 'Ждёт выполнения');
     await app.delivery.idle();
     const detail = (await handler.get(`/api/tickets/${id}`)).json.data;
     assert.match(detail.b24Task.text, /^Задача в Битрикс24 №24\d\d создана$/);

@@ -1,0 +1,19 @@
+{
+  "name": "Голос сотрудника — Модус Трейд",
+  "short_name": "Голос сотрудника",
+  "description": "Проблемы и предложения сотрудников: подача с телефона, ответственный, срок и итог.",
+  "lang": "ru",
+  "start_url": "/#/home",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f4b99",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Новое обращение", "url": "/#/new", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

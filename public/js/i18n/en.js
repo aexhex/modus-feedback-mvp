@@ -963,4 +963,6 @@ export default {
   "Частая категория": "Most frequent category",
   "Отбор по клиенту из 1С": "Filtered by 1C client",
   "Сбросить": "Reset",
+  "Нет связи с сервером. Черновик нового обращения сохраняется на этом устройстве — отправьте его, когда связь появится.": "No connection to the server. Your new request draft is saved on this device — send it when the connection is back.",
+  "Установить приложение": "Install app",
 };
