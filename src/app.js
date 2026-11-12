@@ -122,7 +122,9 @@ export function createApp({
     if (route.options.mutate && !allowMutation(user?.id ?? ip, Date.now())) {
       return fail(res, 429, 'Слишком много запросов, повторите через минуту');
     }
-    if (user) {
+    // Продлевает сессию только работа человека; фоновый опрос уведомлений (x-background) — нет,
+    // иначе открытая и забытая вкладка держала бы сессию бесконечно.
+    if (user && req.headers['x-background'] !== '1') {
       const renewed = renewSession(db, token, now());
       if (renewed) res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_S, { secure: secureCookie, embedded: renewed.embedded }));
     }

@@ -206,6 +206,8 @@ export function openDatabase(path) {
   ensureColumn(db, 'sessions', 'embedded', 'INTEGER NOT NULL DEFAULT 0');
   // Когда сессия открыта: продление не длится дольше SESSION_MAX_DAYS.
   ensureColumn(db, 'sessions', 'issued_at', 'TEXT');
+  // Сессии из прежней версии: время входа — их исходное created_at (до первого продления).
+  db.exec('UPDATE sessions SET issued_at = created_at WHERE issued_at IS NULL');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_b24 ON users(b24_id) WHERE b24_id IS NOT NULL');
   ensureColumn(db, 'outbox', 'user_id', 'INTEGER');
   ensureColumn(db, 'outbox', 'ticket_id', 'INTEGER');

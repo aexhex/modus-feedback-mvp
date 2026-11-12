@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { startTestApp, TEST_NOW } from './helpers.js';
 import { openDatabase } from '../src/db.js';
 import { SESSION_COOKIE } from '../src/config.js';
-import { sessionCookie, login } from '../src/auth.js';
+import { sessionCookie, login, renewSession } from '../src/auth.js';
 import { stateCookie } from '../src/integrations/b24-sso.js';
 import { backup } from '../src/backup.js';
 
@@ -153,6 +153,33 @@ describe('cookie и продление сессии', () => {
     }
   });
 
+  it('фоновый опрос уведомлений сессию не продлевает', async () => {
+    const app = await startTestApp();
+    try {
+      const token = login(app.db, app.userId('Сотрудник офиса'), TEST_NOW);
+      app.setNow('2026-11-11T16:00:00.000Z'); // больше половины срока
+      const res = await fetch(`${app.base}/api/notifications`, { headers: { cookie: `${SESSION_COOKIE}=${token}`, 'x-background': '1' } });
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('set-cookie'), null);
+      app.setNow('2026-11-11T21:01:00.000Z'); // 12 часов с входа — сессия закрыта, опрос её не продлил
+      assert.equal((await app.request(`${SESSION_COOKIE}=${token}`, 'GET', '/api/me')).status, 401);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('сессия из прежней версии тоже ограничена неделей', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'fb-legacy-')), 'legacy.db');
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`CREATE TABLE sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL);
+      INSERT INTO sessions VALUES ('${'a'.repeat(64)}', 1, '2026-11-01T09:00:00.000Z');`);
+    legacy.close();
+    const db = openDatabase(file);
+    assert.equal(db.prepare('SELECT issued_at FROM sessions').get().issued_at, '2026-11-01T09:00:00.000Z');
+    assert.equal(renewSession(db, 'a'.repeat(64), '2026-11-09T09:00:00.000Z'), null, 'через 8 дней с входа не продлевается');
+    db.close();
+  });
+
   it('продление не длится дольше недели', async () => {
     const app = await startTestApp();
     try {
@@ -220,5 +247,12 @@ describe('резервные копии', () => {
     assert.equal(sessionsCopy.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0, 'сессии в копию не попадают');
     sessionsCopy.close();
     assert.deepEqual(readdirSync(backupDir).sort(), ['backup-20261111-090000', 'backup-20261112-090000']);
+    // Сбой посреди копии (база недоступна): недоделанное убирается и не вытесняет готовые копии.
+    const broken = openDatabase(':memory:');
+    broken.close();
+    assert.throws(() => backup(broken, { uploadsDir, backupDir, keep: 2, nowIso: '2026-11-13T09:00:00.000Z' }));
+    assert.deepEqual(readdirSync(backupDir).sort(), ['backup-20261111-090000', 'backup-20261112-090000']);
+    backup(db, { uploadsDir, backupDir, keep: 2, nowIso: '2026-11-14T09:00:00.000Z' });
+    assert.deepEqual(readdirSync(backupDir).sort(), ['backup-20261112-090000', 'backup-20261114-090000']);
   });
 });
