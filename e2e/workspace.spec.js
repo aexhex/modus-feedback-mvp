@@ -25,10 +25,15 @@ test('доска задач: перемещение карточки, вопро
   await page.locator('.nav').getByRole('link', { name: 'Канбан' }).click();
   await expect(page.locator('[data-status="new"] .kb-card')).toContainText('A-016');
 
-  await page.getByLabel('Переместить A-016').selectOption({ label: 'На рассмотрении' });
+  // «⋯» на карточке — перемещение без перетаскивания.
+  const moveTo = async (status) => {
+    await page.locator('.kb-card[data-code="A-016"] .kb-menu summary').click();
+    await page.locator('.kb-card[data-code="A-016"] .kb-menu-list').getByRole('button', { name: status }).click();
+  };
+  await moveTo('На рассмотрении');
   await expect(page.locator('[data-status="in_review"] .kb-card', { hasText: 'A-016' })).toBeVisible();
 
-  await page.getByLabel('Переместить A-016').selectOption({ label: 'Ожидает уточнения' });
+  await moveTo('Ожидает уточнения');
   const dialog = page.locator('dialog');
   await expect(dialog).toContainText('A-016 → Ожидает уточнения');
   await dialog.locator('textarea').fill('Сколько человек планируется на пилотное занятие?');
@@ -84,17 +89,35 @@ test('администратор меняет сроки SLA — подсказ�
   await expect(page.locator('form')).toContainText('высокий — 2');
 });
 
-test('канбан: колонки одной высоты, доска и её прокрутка помещаются в окно', async ({ page }) => {
-  await page.setViewportSize({ width: 1400, height: 850 });
+test('канбан: четыре рабочие колонки в окне, завершённые — в свёрнутом блоке', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await loginAs(page, 'Директор по развитию');
   await page.goto('/#/kanban');
-  await expect(page.locator('.kb-col')).toHaveCount(6);
+  const active = page.locator('.kanban:not(.kanban-done) > .kb-col');
+  await expect(active).toHaveCount(4);
   const layout = await page.evaluate(() => {
     const board = document.querySelector('.kanban').getBoundingClientRect();
-    const heights = [...document.querySelectorAll('.kb-col')].map((c) => Math.round(c.getBoundingClientRect().height));
-    return { bottom: board.bottom, heights, page: document.documentElement.scrollHeight };
+    const heights = [...document.querySelectorAll('.kanban:not(.kanban-done) > .kb-col')].map((c) => Math.round(c.getBoundingClientRect().height));
+    const done = document.querySelector('.kb-done > summary').getBoundingClientRect();
+    return { right: board.right, heights, doneBottom: done.bottom, scrollsSideways: document.documentElement.scrollWidth > innerWidth };
   });
   expect(new Set(layout.heights).size).toBe(1);
-  expect(layout.bottom).toBeLessThanOrEqual(850);
-  expect(layout.page).toBeLessThanOrEqual(850);
+  expect(layout.scrollsSideways).toBe(false);
+  expect(layout.doneBottom).toBeLessThanOrEqual(900);
+
+  // Отборы: поиск и «только просроченные» — без перезагрузки.
+  await page.getByLabel('Поиск по канбану').fill('A-009');
+  await expect(page.locator('.kb-card')).toHaveCount(1);
+  await page.getByLabel('Поиск по канбану').fill('');
+  await page.getByText('Только просроченные').click();
+  for (const card of await page.locator('.kanban:not(.kanban-done) .kb-card').all()) await expect(card).toHaveClass(/overdue/);
+  await page.getByText('Только просроченные').click();
+
+  // Сверху колонки — просроченные.
+  const firstNew = page.locator('[data-status="new"] .kb-card').first();
+  await expect(firstNew).toHaveClass(/overdue/);
+
+  // Завершённые открываются по щелчку.
+  await page.locator('.kb-done > summary').click();
+  await expect(page.locator('.kanban-done [data-status="implemented"] .kb-card').first()).toBeVisible();
 });
