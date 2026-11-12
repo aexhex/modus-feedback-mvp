@@ -7,13 +7,17 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(method, path, body) {
+export async function api(method, path, body, { background = false } = {}) {
   let res;
   try {
     res = await fetch(`/api${path}`, {
       method,
       credentials: 'same-origin',
-      headers: body !== undefined ? { 'content-type': 'application/json' } : {},
+      headers: {
+        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        // Фоновый опрос — не работа человека: по нему сессия не продлевается.
+        ...(background ? { 'x-background': '1' } : {}),
+      },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -25,6 +29,7 @@ export async function api(method, path, body) {
 }
 
 export const get = (path) => api('GET', path);
+export const getInBackground = (path) => api('GET', path, undefined, { background: true });
 
 // Для постраничных списков: данные вместе с метаданными { total, page, limit }.
 export async function getWithMeta(path) {
