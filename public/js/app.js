@@ -16,6 +16,7 @@ import { renderClients, renderClientForm } from './views/clients.js';
 import { renderReport } from './views/report.js';
 import { renderDigest } from './views/digest.js';
 import { renderSolutions } from './views/solutions.js';
+import { renderProfile } from './views/profile.js';
 import { setupPwa, installButton } from './pwa.js';
 
 const NOTIFY_POLL_MS = 30_000;
@@ -39,6 +40,7 @@ const ROUTES = [
   { re: /^\/clients$/, view: renderClients, allow: isOversight },
   { re: /^\/report$/, view: renderReport, allow: isOversight },
   { re: /^\/digest$/, view: renderDigest, allow: isOversight },
+  { re: /^\/profile$/, view: renderProfile },
 ];
 
 function parseHash() {
@@ -174,7 +176,7 @@ function shell(me, path, query) {
         langSwitch(),
         themeToggle(),
         bell(),
-        h('div', { class: 'user-chip' }, h('b', null, me.name), h('span', null, `${me.roleLabel} · ${me.department}`)),
+        h('a', { class: 'user-chip', href: '#/profile', title: 'Мой профиль' }, h('b', null, me.name), h('span', null, `${me.roleLabel} · ${me.department}`)),
         h('button', { class: 'btn btn-sm', onclick: logout }, me.canSwitch ? 'Сменить роль' : 'Выйти')),
       content));
   return content;

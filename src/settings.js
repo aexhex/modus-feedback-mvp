@@ -81,8 +81,36 @@ export function getWorkdays(db) {
   }
 }
 
-/** Производственный календарь для расчёта сроков: праздники и рабочие выходные. */
-export const getCalendar = (db) => ({ holidays: getHolidays(db), workdays: getWorkdays(db) });
+const WORK_HOURS_KEY = 'work_hours';
+
+/** @returns {{ start: number, end: number } | null} рабочие часы для сроков; null — сутки целиком */
+export function getWorkHours(db) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(WORK_HOURS_KEY);
+  try {
+    const stored = row ? JSON.parse(row.value) : null;
+    return stored && Number.isInteger(stored.start) && Number.isInteger(stored.end) && stored.start < stored.end ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+// Новые часы действуют для сроков, которые рассчитываются после сохранения.
+export function setWorkHours(db, input) {
+  if (!input.enabled) {
+    db.prepare('DELETE FROM settings WHERE key = ?').run(WORK_HOURS_KEY);
+    return null;
+  }
+  const start = Number(input.start);
+  const end = Number(input.end);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > 24 || end - start < 1) {
+    throw badRequest('Рабочие часы: целые часы от 0 до 24, начало раньше конца');
+  }
+  saveSetting(db, WORK_HOURS_KEY, { start, end });
+  return { start, end };
+}
+
+/** Производственный календарь для расчёта сроков: праздники, рабочие выходные и рабочие часы. */
+export const getCalendar = (db) => ({ holidays: getHolidays(db), workdays: getWorkdays(db), workHours: getWorkHours(db) });
 
 export const listHolidays = (db) => [...getHolidays(db)].sort();
 export const listCalendar = (db) => ({ holidays: listHolidays(db), workdays: [...getWorkdays(db)].sort() });
