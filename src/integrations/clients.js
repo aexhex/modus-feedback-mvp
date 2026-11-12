@@ -7,7 +7,7 @@ const B24_MAX_PAGES = 100;
 
 export class IntegrationError extends Error {}
 
-async function fetchJson(url, init) {
+export async function fetchJson(url, init) {
   let res;
   try {
     res = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });

@@ -1,5 +1,5 @@
-// Демо-аутентификация: выбор пользователя из списка. В промышленной версии — SSO
-// через Битрикс24 OAuth / корпоративный каталог (см. docs/ARCHITECTURE.md).
+// Сессии. Открывает их вход через Битрикс24 (integrations/b24-sso.js) или, в демо-режиме и пока
+// Битрикс24 не настроен, выбор пользователя из списка (см. docs/ARCHITECTURE.md).
 import { randomBytes } from 'node:crypto';
 import { SESSION_TTL_HOURS, addHours } from './config.js';
 import { notFound } from './http.js';

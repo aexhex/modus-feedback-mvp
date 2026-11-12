@@ -161,7 +161,7 @@ function shell(me, path, query) {
         themeToggle(),
         bell(),
         h('div', { class: 'user-chip' }, h('b', null, me.name), h('span', null, `${me.roleLabel} · ${me.department}`)),
-        h('button', { class: 'btn btn-sm', onclick: logout }, 'Сменить роль')),
+        h('button', { class: 'btn btn-sm', onclick: logout }, me.canSwitch ? 'Сменить роль' : 'Выйти')),
       content));
   return content;
 }

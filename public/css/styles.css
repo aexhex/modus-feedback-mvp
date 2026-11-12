@@ -654,3 +654,11 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 /* Приложение на телефоне: плашка «Нет связи» и кнопка установки */
 .offline-banner { position: sticky; top: 0; z-index: 50; padding: 8px 16px; background: var(--text); color: var(--surface); font-size: 14px; text-align: center; }
 .offline-banner[hidden], .install-btn[hidden] { display: none; }
+
+/* Вход через Битрикс24 и страница входа демо-портала */
+.b24-login { display: grid; justify-items: start; gap: 10px; margin-bottom: 28px; max-width: 640px; }
+.b24-login .muted { font-size: 14px; margin: 0; }
+.login-error { margin: 0; padding: 10px 14px; border-radius: 8px; background: var(--danger-soft); color: var(--text); border-left: 3px solid var(--danger); }
+.demo-oauth h1 { margin-bottom: 12px; }
+.demo-oauth .login-note { margin-bottom: 20px; max-width: 720px; }
+.demo-oauth .user-card { text-decoration: none; color: inherit; }
