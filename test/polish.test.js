@@ -246,7 +246,9 @@ describe('сброс демо-данных', () => {
         type: 'idea', categoryId: categoryId(app, 'Обучение'), title: 'Временная идея', description: 'Будет удалена при сбросе.',
       })).json.data;
       await emp.post(`/api/tickets/${created.id}/attachments`, file);
-      assert.equal(readdirSync(app.uploadsDir).length, 1);
+      // Три демонстрационных файла из начальных данных и один загруженный.
+      const before = readdirSync(app.uploadsDir);
+      assert.equal(before.length, 4);
       writeFileSync(join(app.uploadsDir, 'not-an-attachment.db'), 'чужой файл');
 
       const admin = await app.as('Администратор системы');
@@ -254,7 +256,13 @@ describe('сброс демо-данных', () => {
       assert.equal(r.status, 200);
       assert.match(r.headers.get('set-cookie'), /Max-Age=0/);
       assert.equal(app.db.prepare('SELECT COUNT(*) AS n FROM tickets').get().n, 20);
-      assert.deepEqual(readdirSync(app.uploadsDir), ['not-an-attachment.db']);
+      // Старые файлы удалены, демонстрационные созданы заново, чужой файл не тронут.
+      const after = readdirSync(app.uploadsDir);
+      assert.ok(after.includes('not-an-attachment.db'));
+      assert.equal(after.length, 4);
+      assert.ok(before.every((f) => !after.includes(f)));
+      const stored = app.db.prepare('SELECT stored_name FROM attachments').all().map((a) => a.stored_name).sort();
+      assert.deepEqual(stored, after.filter((f) => f !== 'not-an-attachment.db').sort());
       assert.equal((await admin.get('/api/me')).status, 401);
       assert.equal((await emp.get('/api/me')).status, 401);
 

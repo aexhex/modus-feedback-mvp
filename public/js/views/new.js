@@ -28,6 +28,9 @@ function similarPanel() {
         h('div', { class: 'row' }, h('span', { class: 't-code' }, s.code), h('span', { class: `badge status-${s.status}` }, s.statusLabel), h('span', { class: 'score' }, `сходство ${Math.round(s.score * 100)}%`)),
         h('div', { class: 't-title' }, s.title),
         h('div', { class: 't-sub' }, s.type === 'idea' ? s.category : `${s.category} · у кого так же: ${s.supportsCount}`),
+        // Вопрос уже рассмотрен — показываем итог, чтобы не подавать то же самое заново.
+        s.resolution && h('div', { class: `already-solved ${s.status === 'rejected' ? 'rejected' : ''}` },
+          h('b', null, s.status === 'rejected' ? 'Уже рассматривали, отказ: ' : 'Уже решено: '), s.resolution),
         h('div', { class: 'row', style: { marginTop: '8px' } },
           s.isOwn ? h('span', { class: 'chip' }, 'Ваше обращение')
             : s.type === 'problem' ? supportBtn

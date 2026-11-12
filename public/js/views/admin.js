@@ -1,4 +1,5 @@
 import { h, mount, toast, options } from '../dom.js';
+import { locale, t } from '../i18n.js';
 import { get, post, patch } from '../api.js';
 import { templatesCard, holidaysCard, usersAdminCard, auditCard } from './admin-extra.js';
 
@@ -42,7 +43,7 @@ function outboxCard(items) {
       : h('ul', { class: 'list-plain' }, items.map((o) => h('li', null,
         h('div', null, h('span', { class: 'chip' }, `${o.channel} · ${o.method}`), ' → ', h('b', null, o.recipient)),
         h('div', null, o.payload.MESSAGE),
-        h('div', { class: 't-sub' }, new Date(o.createdAt).toLocaleString('ru-RU'))))));
+        h('div', { class: 't-sub' }, new Date(o.createdAt).toLocaleString(locale()))))));
 }
 
 // Сроки SLA в рабочих днях; действуют для обращений, созданных после сохранения.
@@ -78,11 +79,39 @@ function slaCard(sla, reload) {
       h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить сроки')));
 }
 
+// Целевые значения показателей (ТЗ 2.7): на странице «Показатели» рядом с фактом видна цель.
+function targetsCard(targets, reload) {
+  const inputs = new Map(targets.map((t) => [t.key, h('input', {
+    type: 'number', min: 0, max: t.limit, step: t.unit === 'шт.' ? 1 : 0.1, value: String(t.value),
+    'aria-label': `${t.label}: цель, ${t.unit}`,
+  })]));
+  const save = async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(targets.map((t) => [t.key, inputs.get(t.key).value === '' ? '' : Number(inputs.get(t.key).value)]));
+    try {
+      await patch('/admin/targets', body);
+      toast('Цели сохранены — сравнение видно в «Показателях»', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  return h('section', { class: 'card' },
+    h('h3', null, 'Цели показателей'),
+    h('p', { class: 't-sub' }, 'ТЗ оставляет целевые значения на усмотрение компании. Задайте их здесь: в «Показателях» каждая плитка покажет, достигнута ли цель.'),
+    h('form', { onsubmit: save },
+      h('table', { class: 'table sla-table' },
+        h('thead', null, h('tr', null, ['Показатель', 'Условие', 'Цель'].map((c) => h('th', null, c)))),
+        h('tbody', null, targets.map((t) => h('tr', null,
+          h('td', null, h('b', null, t.label)),
+          h('td', null, t.dir === 'min' ? 'не меньше' : 'не больше'),
+          h('td', null, h('span', { class: 'row target-input' }, inputs.get(t.key), h('span', { class: 't-sub' }, t.unit))))))),
+      h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить цели')));
+}
+
 // Сброс демо-данных: доступен только в демо-режиме, требует подтверждения и выводит всех из системы.
 function demoCard() {
   const reset = async () => {
     // eslint-disable-next-line no-alert -- нативное подтверждение для разрушительного действия
-    if (!window.confirm('Удалить все изменения и вернуть исходные демо-данные? Все пользователи будут выведены из системы.')) return;
+    if (!window.confirm(t('Удалить все изменения и вернуть исходные демо-данные? Все пользователи будут выведены из системы.'))) return;
     try {
       await post('/admin/demo-reset');
       location.hash = '#/login';
@@ -96,9 +125,9 @@ function demoCard() {
 }
 
 export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
-  const [categories, users, outbox, sla, templates, holidays, auditLog] = await Promise.all([
+  const [categories, users, outbox, sla, templates, holidays, auditLog, targets] = await Promise.all([
     get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
-    get('/admin/templates'), get('/admin/holidays'), get('/admin/audit'),
+    get('/admin/templates'), get('/admin/holidays'), get('/admin/audit'), get('/admin/targets'),
   ]);
   const staff = users.filter((u) => u.role !== 'employee' && u.isActive);
   const reload = async () => { await refreshMeta(); rerender(); };
@@ -109,6 +138,7 @@ export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
     categoriesCard(categories, staff, reload),
     usersAdminCard(users, me, reload),
     h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload), holidaysCard(holidays, reload)),
+    targetsCard(targets, reload),
     templatesCard(templates, reload),
     h('div', { class: 'an-grid admin-pair' }, outboxCard(outbox), auditCard(auditLog)));
 }

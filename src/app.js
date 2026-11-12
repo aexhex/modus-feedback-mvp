@@ -64,7 +64,7 @@ export function createApp({
   demoMode = process.env.DEMO_MODE === '1',
 }) {
   const db = openDatabase(dbPath);
-  if (seed) seedIfEmpty(db, now());
+  if (seed) seedIfEmpty(db, now(), uploadsDir);
   seedTemplates(db);
   escalateOverdue(db, now());
   const ctx = { db, uploadsDir, now, demoMode };

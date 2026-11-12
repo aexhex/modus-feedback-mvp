@@ -3,3 +3,7 @@ node_modules/
 test-results/
 playwright-report/
 .claude/settings.local.json
+
+# Материалы к защите храним локально, в репозиторий не попадают.
+docs/demo/
+docs/presentation/
