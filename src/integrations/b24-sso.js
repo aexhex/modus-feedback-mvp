@@ -49,6 +49,23 @@ export async function b24UserByCode(sso, endpoints, code) {
 }
 
 /**
+ * Ключ, присланный порталом в окно приложения (AUTH_ID) → { id, active }. Сначала app.info: ключ должен быть
+ * выдан именно нашему приложению. Иначе стороннее приложение портала, получившее ключ сотрудника, вошло бы
+ * от его имени, подставив заголовок Origin (его проверяют только браузеры).
+ */
+export async function b24UserByAppToken(sso, endpoints, accessToken) {
+  const app = await fetchJson(`${endpoints.rest}app.info.json?auth=${encodeURIComponent(accessToken)}`, {
+    headers: { accept: 'application/json' },
+  });
+  const result = app.body?.result ?? {};
+  // У локального приложения код приложения совпадает с client_id.
+  if (![result.CLIENT_ID, result.CODE].includes(sso.clientId)) {
+    throw new IntegrationError(`Битрикс24 app.info: ключ выдан другому приложению${app.body?.error ? ` (${app.body.error})` : ''}`);
+  }
+  return b24UserByToken(endpoints, accessToken);
+}
+
+/**
  * Ключ доступа сотрудника → { id, active }. Ключ проверяет сам портал компании (адрес из настроек,
  * а не из запроса): ключ другого портала здесь недействителен.
  */

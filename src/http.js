@@ -7,12 +7,12 @@ export class HttpError extends Error {
 
 /**
  * Адрес клиента для ограничения частоты запросов. За обратным прокси (HTTPS-терминатор) все запросы
- * приходят с адреса прокси, поэтому при TRUST_PROXY=1 берётся первый адрес из X-Forwarded-For.
- * Включать только за своим прокси: иначе клиент может подставить заголовок сам.
+ * приходят с адреса прокси, поэтому при TRUST_PROXY=1 берётся последний адрес из X-Forwarded-For — его
+ * дописал наш прокси. Левые адреса клиент может подставить сам. Включать только за своим прокси.
  */
 export function clientIp(req, trustProxy) {
   if (trustProxy) {
-    const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+    const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',').at(-1).trim();
     if (forwarded) return forwarded.slice(0, 64);
   }
   return req.socket.remoteAddress;
@@ -21,6 +21,15 @@ export function clientIp(req, trustProxy) {
 export const badRequest = (msg) => new HttpError(400, msg);
 export const forbidden = (msg = 'Недостаточно прав') => new HttpError(403, msg);
 export const notFound = (msg = 'Не найдено') => new HttpError(404, msg);
+
+/** decodeURIComponent без 500 на битой кодировке («%», «%zz»): это ошибка запроса, а не сервера. */
+export function decodeComponent(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw badRequest('Неверная кодировка адреса');
+  }
+}
 
 const csp = (frameAncestors) =>
   `default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors ${frameAncestors}`;
@@ -103,7 +112,14 @@ export function parseCookies(header = '') {
       .filter(Boolean)
       .map((part) => {
         const idx = part.indexOf('=');
-        return idx < 0 ? [part, ''] : [part.slice(0, idx), decodeURIComponent(part.slice(idx + 1))];
+        if (idx < 0) return [part, ''];
+        const raw = part.slice(idx + 1);
+        // Чужая cookie с битой кодировкой не должна ломать запрос: оставляем её как есть.
+        try {
+          return [part.slice(0, idx), decodeURIComponent(raw)];
+        } catch {
+          return [part.slice(0, idx), raw];
+        }
       }),
   );
 }
@@ -123,7 +139,7 @@ export function createRouter() {
       if (route.method !== method) continue;
       const m = route.regex.exec(path);
       if (!m) continue;
-      const params = Object.fromEntries(route.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
+      const params = Object.fromEntries(route.keys.map((k, i) => [k, decodeComponent(m[i + 1])]));
       return { ...route, params };
     }
     return null;

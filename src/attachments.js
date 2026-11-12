@@ -27,6 +27,10 @@ export function uploadAttachment(db, uploadsDir, user, ticketId, input, now) {
   if (buffer.length === 0) throw badRequest('Файл пустой');
   if (buffer.length > LIMITS.attachmentBytes) throw badRequest('Файл больше 5 МБ');
 
+  // Имя файла автора анонимного обращения («Отчёт_Иванова.docx») выдало бы его — показываем нейтральное.
+  const shownName = row.is_anonymous && row.author_id === user.id
+    ? `Вложение ${db.prepare('SELECT COUNT(*) AS n FROM attachments WHERE ticket_id = ?').get(row.id).n + 1}${ext}`
+    : name;
   mkdirSync(uploadsDir, { recursive: true });
   const storedName = `${randomBytes(16).toString('hex')}${ext}`;
   writeFileSync(join(uploadsDir, storedName), buffer);
@@ -34,9 +38,9 @@ export function uploadAttachment(db, uploadsDir, user, ticketId, input, now) {
     .prepare(
       'INSERT INTO attachments (ticket_id, uploader_id, original_name, stored_name, size, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    .run(row.id, user.id, name, storedName, buffer.length, now);
-  addEvent(db, { ticketId: row.id, actorId: user.id, kind: 'attachment', body: `Прикреплён файл: ${name}`, at: now });
-  return { id: Number(lastInsertRowid), name, size: buffer.length };
+    .run(row.id, user.id, shownName, storedName, buffer.length, now);
+  addEvent(db, { ticketId: row.id, actorId: user.id, kind: 'attachment', body: `Прикреплён файл: ${shownName}`, at: now });
+  return { id: Number(lastInsertRowid), name: shownName, size: buffer.length };
 }
 
 export function readAttachment(db, uploadsDir, user, attachmentId) {

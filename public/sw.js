@@ -2,7 +2,7 @@
 // Файлы интерфейса — «сначала сеть, при сбое — сохранённая копия»: после обновления на сервере
 // пользователь сразу получает новую версию, а без связи — последнюю загруженную.
 // Запросы /api/ не кэшируются никогда: данные обращений на устройстве не хранятся.
-const CACHE = 'golos-v1';
+const CACHE = 'golos-v2';
 const SHELL = ['/', '/css/styles.css', '/js/app.js', '/manifest.webmanifest', '/icons/icon-192.png'];
 
 self.addEventListener('install', (event) => {
@@ -19,7 +19,9 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  // API и демо-портал (учебный почтовый ящик с текстами уведомлений) не кэшируются.
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin
+    || url.pathname.startsWith('/api/') || url.pathname.startsWith('/demo-portal/')) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {

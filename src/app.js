@@ -21,6 +21,7 @@ import { audit } from './audit.js';
 import { vapidKeys } from './integrations/webpush.js';
 import {
   HttpError, createRouter, readJson, readForm, ok, fail, sendFile, parseCookies, clientIp, pageHeaders,
+  decodeComponent,
 } from './http.js';
 
 const MIME = {
@@ -35,10 +36,17 @@ const MIME = {
 
 function createRateLimiter(limitPerMinute) {
   const windows = new Map();
+  let sweptAt = 0;
   return (key, nowMs) => {
     // Истёкшие окна удаляются, чтобы счётчик не рос бесконечно при потоке запросов с разных адресов.
-    if (windows.size > LIMITS.rateLimiterKeysMax) {
+    // Обход — не чаще раза в секунду; если и после него ключей слишком много, забываются самые старые.
+    if (windows.size > LIMITS.rateLimiterKeysMax && nowMs - sweptAt > 1000) {
+      sweptAt = nowMs;
       for (const [k, w] of windows) if (nowMs - w.start > 60_000) windows.delete(k);
+      for (const k of windows.keys()) {
+        if (windows.size <= LIMITS.rateLimiterKeysMax) break;
+        windows.delete(k);
+      }
     }
     const current = windows.get(key);
     if (!current || nowMs - current.start > 60_000) {
@@ -85,6 +93,8 @@ export function createApp({
   // Демо-режим разрешает сброс данных кнопкой в настройках. Включается только явно (DEMO_MODE=1),
   // чтобы случайный запуск без настройки не открыл стирание данных.
   demoMode = process.env.DEMO_MODE === '1',
+  // Вход выбором из списка без пароля вне демо — только явно (ALLOW_LIST_LOGIN=1) и только во внутренней сети.
+  allowListLogin = process.env.ALLOW_LIST_LOGIN === '1',
   integrations: integrationOverrides = {},
   // false — только для тестов: push уходит на локальную «службу push» вместо настоящих.
   pushCheckHost = true,
@@ -121,14 +131,19 @@ export function createApp({
     db, mode: () => config.b24.mode, endpoints, now, logger, mailMode: () => config.mail.mode, mailServer, pushContext: () => push,
   });
   const checkTasks = (options) => pollTasks(db, endpoints().b24, now, options);
-  const ctx = { db, uploadsDir, now, demoMode, demoData: seed, secureCookie, logger, push, integrations: { config, endpoints, delivery, checkTasks } };
+  const ctx = { db, uploadsDir, now, demoMode, allowListLogin, demoData: seed, secureCookie, logger, push, integrations: { config, endpoints, delivery, checkTasks } };
   // Показ во фрейме: системе внутри портала Битрикс24 — только порталу компании; в демо — своей странице демо-портала.
   const frameAncestors = { live: config.sso.portal, demo: "'self'" }[config.sso.mode] ?? null;
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);
-  // Публичная форма без входа ограничена строже и по адресу отправителя.
-  const allowPublicPost = createRateLimiter(LIMITS.publicPostsPerMinute);
+  // Публичная форма без входа и выгрузка для 1С ограничены строже и по адресу отправителя — у каждой свой
+  // счётчик, чтобы подбор токена выгрузки не блокировал отзывы клиентов и наоборот.
+  const strictLimiters = new Map();
+  const allowStrict = (bucket, key, nowMs) => {
+    if (!strictLimiters.has(bucket)) strictLimiters.set(bucket, createRateLimiter(LIMITS.publicPostsPerMinute));
+    return strictLimiters.get(bucket)(key, nowMs);
+  };
 
   async function handleApi(req, res, url) {
     const route = router.match(req.method, url.pathname);
@@ -137,7 +152,7 @@ export function createApp({
     const user = userByToken(db, token, now());
     if (!route.options.public && !user) return fail(res, 401, 'Требуется вход');
     const ip = clientIp(req, trustProxy);
-    if (route.options.strict && !allowPublicPost(ip, Date.now())) {
+    if (route.options.strict && !allowStrict(route.options.strict, ip, Date.now())) {
       return fail(res, 429, 'Слишком много отправок, повторите через минуту');
     }
     if (route.options.mutate && !allowMutation(user?.id ?? ip, Date.now())) {
@@ -184,7 +199,7 @@ export function createApp({
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       if (demoPortal && url.pathname.startsWith(`${DEMO_PORTAL_PREFIX}/`)) return await handleDemoPortal(req, res, url);
       if (req.method !== 'GET') return fail(res, 405, 'Метод не поддерживается');
-      return await serveStatic(publicDir, decodeURIComponent(url.pathname), res, frameAncestors);
+      return await serveStatic(publicDir, decodeComponent(url.pathname), res, frameAncestors);
     } catch (error) {
       if (error instanceof HttpError) return fail(res, error.status, error.message);
       logger.error(`[${req.method} ${url.pathname}]`, error);

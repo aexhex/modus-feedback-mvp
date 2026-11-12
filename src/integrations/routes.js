@@ -101,5 +101,5 @@ export function registerIntegrationRoutes({ add, admin, PUBLIC, MUTATE }) {
   add('GET', '/api/integrations/1c/tickets', ({ ctx, req, query }) => {
     checkExportToken(ctx.integrations.config.exportToken, req.headers.authorization);
     return exportForOnec(ctx.db, query);
-  }, { ...PUBLIC, strict: true }); // лимит по адресу — от подбора токена
+  }, { ...PUBLIC, strict: 'onec-export' }); // лимит по адресу — от подбора токена
 }
