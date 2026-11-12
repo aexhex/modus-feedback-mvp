@@ -290,6 +290,65 @@ describe('задачи и сброс данных', () => {
   });
 });
 
+describe('статусы задач Битрикс24', () => {
+  let app;
+  before(async () => {
+    app = await startTestApp({ demoMode: true });
+    const admin = await app.as('Администратор системы');
+    await admin.post('/api/admin/integrations/b24/org-apply');
+    await app.delivery.idle();
+  });
+  after(() => app.close());
+
+  it('завершение задачи на портале попадает в карточку и уведомляет ответственного', async () => {
+    const id = app.ticketId('A-009');
+    const handler = await app.as('Ответственный за договоры');
+    await handler.post(`/api/tickets/${id}/b24-task`);
+    await app.delivery.idle();
+    let detail = (await handler.get(`/api/tickets/${id}`)).json.data;
+    assert.equal(detail.b24Task.task.statusLabel, 'Ждёт выполнения');
+
+    const admin = await app.as('Администратор системы');
+    assert.deepEqual((await admin.post('/api/admin/integrations/b24/tasks-check')).json.data, { checked: 1, changed: 0, errors: 0 });
+
+    detail = (await handler.post(`/api/tickets/${id}/b24-task/demo-complete`)).json.data;
+    assert.equal(detail.b24Task.task.statusLabel, 'Завершена');
+    assert.match(detail.b24Task.text, /завершена — подтвердите результат и зафиксируйте итог/);
+    const note = (await handler.get('/api/notifications')).json.data.items[0];
+    assert.match(note.text, /Задача в Битрикс24 по A-009 выполнена/);
+    // Повторная проверка ничего не дублирует.
+    assert.equal((await admin.post('/api/admin/integrations/b24/tasks-check')).json.data.changed, 0);
+  });
+
+  it('удалённая на портале задача помечается ошибкой, остальные проверяются', async () => {
+    const id = app.ticketId('A-003');
+    app.db.prepare("INSERT INTO b24_tasks (ticket_id, task_id, status, created_at) VALUES (?, '999999', '2', '2026-11-11')").run(id);
+    const admin = await app.as('Администратор системы');
+    const r = (await admin.post('/api/admin/integrations/b24/tasks-check')).json.data;
+    assert.equal(r.errors, 1);
+    const row = app.db.prepare('SELECT error FROM b24_tasks WHERE ticket_id = ?').get(id);
+    assert.match(row.error, /Задача не найдена/);
+  });
+
+  it('завершение на демо-портале недоступно без демо-портала и без прав', async () => {
+    const emp = await app.as('Менеджер по продажам');
+    assert.equal((await emp.post(`/api/tickets/${app.ticketId('A-009')}/b24-task/demo-complete`)).status, 403);
+    const handler = await app.as('Ответственный за договоры');
+    const noTask = app.db.prepare("SELECT t.id FROM tickets t WHERE t.assignee_id = ? AND NOT EXISTS (SELECT 1 FROM b24_tasks b WHERE b.ticket_id = t.id)")
+      .get(app.userId('Ответственный за договоры'));
+    if (noTask) assert.equal((await handler.post(`/api/tickets/${noTask.id}/b24-task/demo-complete`)).status, 400);
+    const off = await startTestApp();
+    try {
+      const h = await off.as('Ответственный за договоры');
+      assert.equal((await h.post(`/api/tickets/${off.ticketId('A-009')}/b24-task/demo-complete`)).status, 403);
+      const admin = await off.as('Администратор системы');
+      assert.equal((await admin.post('/api/admin/integrations/b24/tasks-check')).status, 400);
+    } finally {
+      await off.close();
+    }
+  });
+});
+
 describe('1С УТ через демо-портал', () => {
   let app;
   let token;
@@ -303,6 +362,8 @@ describe('1С УТ через демо-портал', () => {
   it('загружает контрагентов; помеченные на удаление не предлагаются', async () => {
     const emp = await app.as('Сотрудник офиса');
     assert.equal((await emp.get('/api/meta')).json.data.hasCounterparties, false);
+    const manager = await app.as('Директор по развитию');
+    assert.equal((await manager.get('/api/analytics')).json.data.clients, null, 'без справочника карточки клиентов нет');
     const admin = await app.as('Администратор системы');
     const r = (await admin.post('/api/admin/integrations/1c/counterparties')).json.data;
     assert.deepEqual(r, { total: 7, added: 8, updated: 0, deactivated: 0 });
@@ -322,6 +383,14 @@ describe('1С УТ через демо-портал', () => {
     const removed = app.db.prepare('SELECT id FROM counterparties WHERE is_active = 0').get().id;
     assert.equal((await emp.post('/api/tickets', newTicket(app, { counterpartyId: removed }))).status, 400);
     assert.equal((await emp.post('/api/tickets', newTicket(app, { counterpartyId: 99999 }))).status, 400);
+
+    // Аналитика по клиентам и фильтр реестра по клиенту.
+    const manager = await app.as('Директор по развитию');
+    const { clients } = (await manager.get('/api/analytics')).json.data;
+    assert.equal(clients.linked, 1);
+    assert.deepEqual(clients.items.map((c) => [c.name, c.total, c.open, c.problems, c.topCategory]), [[client.name, 1, 1, 1, 'Регламенты']]);
+    const listed = (await manager.get(`/api/tickets?scope=all&counterparty=${client.id}`)).json.data;
+    assert.deepEqual(listed.map((t) => t.id), [created.id]);
   });
 
   it('выгрузка для 1С: только по токену, без текста и авторов, анонимность сохраняется', async () => {

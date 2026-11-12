@@ -1,5 +1,5 @@
 // Сводка для руководителя: объёмы, SLA, результативность, повторяющиеся темы.
-import { STATUSES, TYPES, PRIORITIES } from './config.js';
+import { STATUSES, TYPES, PRIORITIES, FINAL_STATUSES } from './config.js';
 import { BASE_SELECT, isFinal, slaState } from './tickets-query.js';
 import { tokenize, jaccard } from './similarity.js';
 import { badRequest } from './http.js';
@@ -177,6 +177,30 @@ function authorFeedback(db) {
   return { feedbackCount: total, confirmedShare: total === 0 ? null : share(resolved, total) };
 }
 
+const TOP_CLIENTS = 10;
+
+// Клиенты из 1С УТ, с которыми связано больше всего обращений (ТЗ 1.2: «последующий анализ обращений»).
+// Дубликаты не считаются; частая категория — подсказка, где у клиента системная проблема.
+function clientsBreakdown(db) {
+  const hasClients = db.prepare('SELECT 1 FROM counterparties LIMIT 1').get();
+  if (!hasClients) return null;
+  const items = db
+    .prepare(
+      `SELECT k.id, k.name, k.inn, COUNT(*) AS total,
+              SUM(CASE WHEN t.status NOT IN (${FINAL_STATUSES.map((s) => `'${s}'`).join(',')}) THEN 1 ELSE 0 END) AS open,
+              SUM(CASE WHEN t.type = 'problem' THEN 1 ELSE 0 END) AS problems,
+              (SELECT c.name FROM tickets t2 JOIN categories c ON c.id = t2.category_id
+               WHERE t2.counterparty_id = k.id AND t2.duplicate_of IS NULL
+               GROUP BY c.id ORDER BY COUNT(*) DESC, c.name LIMIT 1) AS topCategory
+       FROM tickets t JOIN counterparties k ON k.id = t.counterparty_id
+       WHERE t.duplicate_of IS NULL
+       GROUP BY k.id ORDER BY total DESC, k.name LIMIT ?`,
+    )
+    .all(TOP_CLIENTS);
+  const { linked } = db.prepare('SELECT COUNT(*) AS linked FROM tickets WHERE counterparty_id IS NOT NULL AND duplicate_of IS NULL').get();
+  return { items, linked };
+}
+
 export function buildAnalytics(db, nowIso) {
   const rows = db.prepare(BASE_SELECT).all();
   const finals = rows.filter((r) => isFinal(r.status));
@@ -203,6 +227,7 @@ export function buildAnalytics(db, nowIso) {
     kpi,
     targets: evaluateTargets(kpi, getTargets(db)),
     problemMap: problemMap(db, rows, nowIso),
+    clients: clientsBreakdown(db),
     byType: countBy(rows, (r) => r.type, TYPES),
     byStatus: countBy(rows, (r) => r.status, STATUSES),
     byCategory: countBy(rows, (r) => r.category_name),

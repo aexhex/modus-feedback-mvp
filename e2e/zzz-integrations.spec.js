@@ -2,7 +2,7 @@
 // Файл идёт последним: синхронизация оргструктуры меняет состав пользователей демо-датасета.
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { loginAs } from './helpers.js';
+import { loginAs, openTicket } from './helpers.js';
 
 const integrationsCard = (page) => page.locator('section.card', { hasText: 'Интеграции с Битрикс24 и 1С УТ' });
 
@@ -59,4 +59,32 @@ test('клиенты из 1С УТ: загрузка справочника и �
   await page.getByRole('button', { name: 'Отправить обращение' }).click();
   await expect(page.locator('.facts')).toContainText('Клиент (1С УТ)');
   await expect(page.locator('.facts')).toContainText('ТОО «Альфа Монтаж»');
+});
+
+test('задача из обращения: завершение на демо-портале видно в карточке', async ({ page }) => {
+  await loginAs(page, 'Ответственный за договоры');
+  await openTicket(page, 'A-009');
+  await page.locator('.more-actions summary').click();
+  // Задача могла быть создана раньше (workspace.spec), но сброс демо-данных в zpolish.spec её стирает.
+  const create = page.getByRole('button', { name: 'Создать задачу в Битрикс24' });
+  if (await create.isVisible()) {
+    await create.click();
+    await expect(page.locator('.toast-success').last()).toContainText('Задача отправлена в Битрикс24');
+    await page.reload();
+    await page.locator('.more-actions summary').click();
+  }
+  await expect(page.getByText('Статус в Битрикс24:')).toContainText('Ждёт выполнения');
+  await page.getByRole('button', { name: 'Завершить задачу на демо-портале' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Задача завершена на демо-портале');
+  await expect(page.locator('.timeline')).toContainText('подтвердите результат и зафиксируйте итог');
+});
+
+test('аналитика: клиенты из 1С с наибольшим числом обращений', async ({ page }) => {
+  await loginAs(page, 'Директор по развитию');
+  await page.goto('/#/analytics');
+  const card = page.locator('section.card', { hasText: 'Клиенты с наибольшим числом обращений' });
+  await expect(card.getByRole('link', { name: 'ТОО «Альфа Монтаж»' })).toBeVisible();
+  await card.getByRole('link', { name: 'ТОО «Альфа Монтаж»' }).click();
+  await expect(page.getByText('Отбор по клиенту из 1С')).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(1);
 });

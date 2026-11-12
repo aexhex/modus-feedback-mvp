@@ -7,7 +7,7 @@ const TITLES = {
   all: ['Все обращения', 'Полный реестр с фильтрами по подразделению, категории, статусу и срокам.'],
   feed: ['Идеи коллег', 'Обращения, которые авторы открыли для всех. Комментируйте и поддерживайте — так идея быстрее попадёт в работу.'],
 };
-const FILTER_KEYS = ['q', 'type', 'status', 'category', 'priority', 'department', 'sort', 'from', 'to'];
+const FILTER_KEYS = ['q', 'type', 'status', 'category', 'priority', 'department', 'counterparty', 'sort', 'from', 'to'];
 
 // Фильтры и страница хранятся в адресе: ссылкой на выборку можно поделиться.
 function readFilters(query) {
@@ -117,7 +117,10 @@ export async function renderList(el, { me, meta, query, go }) {
         : h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: filters.overdue, onchange: set('overdue') }), 'Только просроченные')),
     h('div', { class: 'row date-filter' },
       h('label', { class: 'row' }, h('span', { class: 'field-label' }, 'Подано с'), h('input', { type: 'date', value: filters.from, onchange: set('from') })),
-      h('label', { class: 'row' }, h('span', { class: 'field-label' }, 'по'), h('input', { type: 'date', value: filters.to, onchange: set('to') }))),
+      h('label', { class: 'row' }, h('span', { class: 'field-label' }, 'по'), h('input', { type: 'date', value: filters.to, onchange: set('to') })),
+      // Отбор по клиенту приходит ссылкой из аналитики; отдельного списка клиентов в фильтрах нет.
+      filters.counterparty && h('span', { class: 'chip' }, 'Отбор по клиенту из 1С ',
+        h('button', { class: 'btn btn-sm btn-ghost', type: 'button', onclick: (e) => { set('counterparty')({ target: { value: '' } }); e.currentTarget.parentElement.remove(); } }, 'Сбросить'))),
     results);
   await load();
 }

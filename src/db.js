@@ -104,6 +104,14 @@ CREATE TABLE IF NOT EXISTS counterparties (
   is_active INTEGER NOT NULL DEFAULT 1,
   synced_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS b24_tasks (
+  ticket_id INTEGER PRIMARY KEY REFERENCES tickets(id),
+  task_id TEXT NOT NULL,
+  status TEXT,
+  checked_at TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

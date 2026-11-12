@@ -1,5 +1,6 @@
 import { h, mount } from '../dom.js';
 import { get } from '../api.js';
+import { t as tr } from '../i18n.js';
 import { weeklyFlowChart, responseTimeChart } from '../chart.js';
 
 const MAX_CATEGORY_BARS = 10;
@@ -43,6 +44,21 @@ function problemMapCard(map) {
     more);
 }
 
+// Клиенты из 1С УТ с наибольшим числом обращений. Карточка видна, когда справочник загружен.
+function clientsCard(clients) {
+  if (!clients) return null;
+  return h('section', { class: 'card' },
+    h('h3', null, 'Клиенты с наибольшим числом обращений (1С УТ)'),
+    h('p', { class: 't-sub' }, `${tr('Обращений, связанных с клиентами')}: ${clients.linked}. ${tr('Клиента указывают при подаче; справочник загружается из 1С в настройках.')}`),
+    clients.items.length === 0 ? h('p', { class: 'muted' }, 'Пока ни одно обращение не связано с клиентом')
+      : h('div', { class: 'table-scroll' }, h('table', { class: 'table report-table' },
+        h('thead', null, h('tr', null, ['Клиент', 'Обращений', 'Открыто', 'Проблем', 'Частая категория'].map((c) => h('th', null, c)))),
+        h('tbody', null, clients.items.map((c) => h('tr', null,
+          h('td', { 'data-no-i18n': '' }, h('a', { href: `#/tickets?scope=all&counterparty=${c.id}` }, c.name)),
+          h('td', null, String(c.total)), h('td', null, String(c.open)), h('td', null, String(c.problems)),
+          h('td', null, c.topCategory)))))));
+}
+
 function bars(title, items, link) {
   const max = Math.max(1, ...items.map((i) => i.count));
   return h('section', { class: 'card' },
@@ -77,6 +93,7 @@ export async function renderAnalytics(el, { me, meta }) {
       h('section', { class: 'card' }, weeklyFlowChart(a.weekly)),
       h('section', { class: 'card' }, responseTimeChart(a.weekly))),
     problemMapCard(a.problemMap),
+    clientsCard(a.clients),
     h('div', { class: 'an-grid' },
       h('section', { class: 'card' },
         h('h3', null, 'Просроченные — требуют внимания'),
