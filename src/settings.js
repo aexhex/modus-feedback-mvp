@@ -120,12 +120,49 @@ export function getTimezone(db) {
 
 export const tzOffsetMs = (db) => getTimezone(db) * 3600 * 1000;
 
+const DEPT_TIMEZONES_KEY = 'department_timezones';
+const validOffset = (n) => Number.isInteger(n) && n >= -12 && n <= 14;
+
+/** @returns {Record<string, number>} пояса подразделений, отличные от пояса компании */
+export function getDepartmentTimezones(db) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(DEPT_TIMEZONES_KEY);
+  try {
+    const stored = row ? JSON.parse(row.value) : {};
+    return Object.fromEntries(Object.entries(stored ?? {}).filter(([, v]) => validOffset(v)));
+  } catch {
+    return {};
+  }
+}
+
 // Новый пояс действует для сроков, рассчитанных после сохранения, и для отчётов сразу.
+// departments — пояса филиалов: { «Подразделение»: смещение | null (как у компании) }.
 export function setTimezone(db, input) {
   const offset = Number(input.offset);
-  if (!Number.isInteger(offset) || offset < -12 || offset > 14) throw badRequest('Часовой пояс: смещение от UTC — целое число часов от −12 до +14');
+  if (!validOffset(offset)) throw badRequest('Часовой пояс: смещение от UTC — целое число часов от −12 до +14');
   saveSetting(db, TIMEZONE_KEY, offset);
+  if (input.departments !== undefined) {
+    if (typeof input.departments !== 'object' || input.departments === null || Array.isArray(input.departments)) {
+      throw badRequest('Пояса подразделений: ожидается список');
+    }
+    const entries = Object.entries(input.departments)
+      .filter(([, v]) => v !== null && v !== '')
+      .map(([name, v]) => [String(name).slice(0, 80), Number(v)]);
+    if (entries.length > 200 || entries.some(([, v]) => !validOffset(v))) throw badRequest('Часовой пояс подразделения: целое число часов от −12 до +14');
+    saveSetting(db, DEPT_TIMEZONES_KEY, Object.fromEntries(entries.filter(([, v]) => v !== offset)));
+  }
   return offset;
+}
+
+/**
+ * Календарь для сроков конкретного обращения: пояс подразделения ответственного — ему отвечать;
+ * без ответственного или без своего пояса у подразделения — пояс компании.
+ */
+export function getCalendarFor(db, assigneeId) {
+  const calendar = getCalendar(db);
+  const department = assigneeId ? db.prepare('SELECT department FROM users WHERE id = ?').get(assigneeId)?.department : null;
+  const zones = getDepartmentTimezones(db);
+  const own = department && Object.hasOwn(zones, department) ? zones[department] : undefined;
+  return own === undefined ? calendar : { ...calendar, tzOffset: own };
 }
 
 /** Производственный календарь для расчёта сроков: праздники, рабочие выходные, рабочие часы и пояс. */

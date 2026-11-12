@@ -17,7 +17,7 @@ import { renderReport } from './views/report.js';
 import { renderDigest } from './views/digest.js';
 import { renderSolutions } from './views/solutions.js';
 import { renderProfile } from './views/profile.js';
-import { setupPwa, installButton } from './pwa.js';
+import { setupPwa, installButton, unsubscribePush } from './pwa.js';
 
 const NOTIFY_POLL_MS = 30_000;
 const root = document.getElementById('app');
@@ -149,6 +149,8 @@ async function logout() {
   } catch {
     // Хранилище недоступно — черновика и не было.
   }
+  const endpoint = await unsubscribePush().catch(() => null);
+  if (endpoint) await post('/me/push/remove', { endpoint }).catch(() => null);
   await del('/session').catch(() => null);
   clearInterval(pollTimer);
   Object.assign(session, { me: null, meta: null });

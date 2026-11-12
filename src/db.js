@@ -104,6 +104,14 @@ CREATE TABLE IF NOT EXISTS counterparties (
   is_active INTEGER NOT NULL DEFAULT 1,
   synced_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS b24_tasks (
   ticket_id INTEGER PRIMARY KEY REFERENCES tickets(id),
   task_id TEXT NOT NULL,

@@ -67,19 +67,33 @@ const TIMEZONES = Array.from({ length: 11 }, (_, i) => i + 2).map((n) => ({
   key: n, label: ({ 3: 'Москва (UTC+3)', 5: 'Казахстан (UTC+5)' })[n] ?? `UTC+${n}`,
 }));
 
-function timezoneForm(offset, reload) {
+function timezoneForm(timezone, reload) {
   const select = h('select', { 'aria-label': 'Часовой пояс компании' }, options(TIMEZONES));
-  select.value = String(offset);
+  select.value = String(timezone.offset);
+  // Филиалы в другом поясе: срок обращения считается по поясу подразделения ответственного.
+  const deptSelects = timezone.departmentList.map((name) => {
+    const el = h('select', { 'aria-label': `${t('Часовой пояс')}: ${name}` }, options(TIMEZONES, { empty: 'Как у компании' }));
+    el.value = timezone.departments[name] === undefined ? '' : String(timezone.departments[name]);
+    return [name, el];
+  });
+  const custom = Object.keys(timezone.departments).length;
   const save = async (e) => {
     e.preventDefault();
     try {
-      await patch('/admin/timezone', { offset: Number(select.value) });
+      await patch('/admin/timezone', {
+        offset: Number(select.value),
+        departments: Object.fromEntries(deptSelects.map(([name, el]) => [name, el.value === '' ? null : Number(el.value)])),
+      });
       toast('Часовой пояс сохранён — сроки новых обращений считаются по нему', 'success');
       reload();
     } catch (err) { toast(err.message, 'error'); }
   };
-  return h('form', { class: 'row work-hours', onsubmit: save },
-    select, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Сохранить пояс'));
+  return h('form', { class: 'stack work-hours', onsubmit: save },
+    h('div', { class: 'row' }, select, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Сохранить пояс')),
+    h('details', { class: 'dept-tz', open: custom > 0 },
+      h('summary', null, `${t('Подразделения в другом поясе')}: ${custom}`),
+      h('p', { class: 't-sub' }, 'Срок обращения считается по поясу подразделения ответственного — ему отвечать. Аналитика и отчёты — по поясу компании.'),
+      h('div', { class: 'dept-tz-grid' }, deptSelects.map(([name, el]) => h('label', { class: 'dept-tz-row' }, h('span', null, name), el)))));
 }
 
 function slaCard(sla, reload, workHours, timezone) {
@@ -114,7 +128,7 @@ function slaCard(sla, reload, workHours, timezone) {
       h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить сроки')),
     h('h3', { style: { marginTop: '20px' } }, 'Часовой пояс'),
     h('p', { class: 't-sub' }, 'По нему считаются рабочие дни и часы, недели в аналитике и границы суток в отчётах.'),
-    timezoneForm(timezone.offset, reload),
+    timezoneForm(timezone, reload),
     h('h3', { style: { marginTop: '20px' } }, 'Рабочие часы'),
     workHoursForm(workHours, reload));
 }

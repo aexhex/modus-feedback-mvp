@@ -1,7 +1,8 @@
 // «Мой профиль»: сотрудник сам указывает рабочую почту и телефон и решает, получать ли письма.
 // Должность и подразделение меняет администратор или загрузка оргструктуры из Битрикс24.
 import { h, mount, toast, field } from '../dom.js';
-import { get, patch } from '../api.js';
+import { get, patch, post } from '../api.js';
+import { pushSupported, currentPushSubscription, subscribePush, unsubscribePush } from '../pwa.js';
 import { t } from '../i18n.js';
 
 export async function renderProfile(el, { me }) {
@@ -33,6 +34,40 @@ export async function renderProfile(el, { me }) {
   };
 
   const fact = (k, v) => [h('dt', null, k), h('dd', null, v || '—')];
+
+  // Push на этом устройстве: телефон или компьютер показывает уведомление, даже когда сайт закрыт.
+  const pushStatus = h('p', { class: 't-sub', role: 'status' });
+  const pushBtn = h('button', { class: 'btn', type: 'button' });
+  const showPush = async () => {
+    if (!pushSupported()) {
+      pushStatus.textContent = t('Этот браузер не поддерживает push-уведомления или сайт открыт не по HTTPS.');
+      pushBtn.hidden = true;
+      return;
+    }
+    const subscribed = Boolean(await currentPushSubscription().catch(() => null));
+    pushStatus.textContent = subscribed ? t('Включены на этом устройстве.') : t('Выключены на этом устройстве.');
+    pushBtn.textContent = subscribed ? t('Отключить на этом устройстве') : t('Включить на этом устройстве');
+    pushBtn.onclick = async () => {
+      pushBtn.disabled = true;
+      try {
+        if (subscribed) {
+          const endpoint = await unsubscribePush();
+          if (endpoint) await post('/me/push/remove', { endpoint });
+          toast('Push-уведомления на этом устройстве отключены', 'success');
+        } else {
+          const { publicKey } = await get('/push/key');
+          await post('/me/push', await subscribePush(publicKey));
+          toast('Push-уведомления на этом устройстве включены', 'success');
+        }
+      } catch (error) {
+        toast(error.message, 'error');
+      } finally {
+        pushBtn.disabled = false;
+        showPush();
+      }
+    };
+  };
+  showPush();
   mount(el,
     h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Мой профиль'),
       h('p', null, 'Рабочие контакты видят коллеги в карточке обращения, где вы ответственный. Личные данные указывать не нужно.'))),
@@ -53,5 +88,8 @@ export async function renderProfile(el, { me }) {
           h('div', null, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Сохранить контакты'))),
         h('label', { class: 'check', style: { marginTop: '16px' } }, mailToggle,
           h('span', null, 'Дублировать уведомления на почту',
-            !profile.email && h('span', { class: 't-sub' }, ` — ${t('сначала укажите почту')}`))))));
+            !profile.email && h('span', { class: 't-sub' }, ` — ${t('сначала укажите почту')}`))),
+        h('h3', { style: { marginTop: '20px' } }, 'Push-уведомления'),
+        h('p', { class: 't-sub' }, 'Уведомление приходит на телефон или компьютер, даже когда сайт закрыт. Включается отдельно на каждом устройстве.'),
+        pushStatus, h('div', null, pushBtn))));
 }

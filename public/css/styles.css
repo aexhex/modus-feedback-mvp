@@ -750,3 +750,7 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 .demo-letter pre { white-space: pre-wrap; font: inherit; font-size: 14px; margin: 6px 0 0; }
 .calendar-load select { width: auto; }
 .work-hours select { width: auto; }
+.dept-tz > summary { cursor: pointer; font-size: 14px; font-weight: 600; margin-top: 4px; }
+.dept-tz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; margin-top: 8px; }
+.dept-tz-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+.dept-tz-row select { width: auto; max-width: 60%; }

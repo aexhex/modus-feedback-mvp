@@ -16,6 +16,7 @@ import { createDemoSmtp } from './integrations/demo-smtp.js';
 import { pollTasks } from './integrations/b24-tasks.js';
 import { runDailySync } from './integrations/daily.js';
 import { backup, backupKeep } from './backup.js';
+import { vapidKeys } from './integrations/webpush.js';
 import {
   HttpError, createRouter, readJson, readForm, ok, fail, sendFile, parseCookies, clientIp, pageHeaders,
 } from './http.js';
@@ -83,6 +84,8 @@ export function createApp({
   // чтобы случайный запуск без настройки не открыл стирание данных.
   demoMode = process.env.DEMO_MODE === '1',
   integrations: integrationOverrides = {},
+  // false — только для тестов: push уходит на локальную «службу push» вместо настоящих.
+  pushCheckHost = true,
   // За HTTPS-прокси: адрес клиента из X-Forwarded-For и cookie сессии только по HTTPS.
   trustProxy = process.env.TRUST_PROXY === '1',
   secureCookie = process.env.COOKIE_SECURE === '1' || /^https:/i.test(process.env.PUBLIC_URL ?? ''),
@@ -106,9 +109,17 @@ export function createApp({
     : config.mail);
   let server;
   const endpoints = () => resolveEndpoints(config, `http://127.0.0.1:${server.address().port}`);
-  const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger, mailMode: () => config.mail.mode, mailServer });
+  // Push: ключи сервера (VAPID) и контакт для служб push — адрес отправителя писем или VAPID_SUBJECT.
+  const push = {
+    keys: vapidKeys(db),
+    subject: process.env.VAPID_SUBJECT || `mailto:${config.mail.from}`,
+    checkHost: pushCheckHost,
+  };
+  const delivery = createDelivery({
+    db, mode: () => config.b24.mode, endpoints, now, logger, mailMode: () => config.mail.mode, mailServer, pushContext: () => push,
+  });
   const checkTasks = (options) => pollTasks(db, endpoints().b24, now, options);
-  const ctx = { db, uploadsDir, now, demoMode, demoData: seed, secureCookie, logger, integrations: { config, endpoints, delivery, checkTasks } };
+  const ctx = { db, uploadsDir, now, demoMode, demoData: seed, secureCookie, logger, push, integrations: { config, endpoints, delivery, checkTasks } };
   // Показ во фрейме: системе внутри портала Битрикс24 — только порталу компании; в демо — своей странице демо-портала.
   const frameAncestors = { live: config.sso.portal, demo: "'self'" }[config.sso.mode] ?? null;
   const router = createRouter();
