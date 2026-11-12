@@ -10,8 +10,12 @@ const CYRILLIC = /[А-Яа-яЁё]/;
 // Содержимое и служебные данные, а не интерфейс: шаблоны ответов, текст рассылки, выгрузка CSV,
 // стоп-слова поиска, демо-обращения и журнал запуска сервера.
 const SERVER_SKIP = new Set(['seed.js', 'seed-data.js', 'templates.js', 'digest.js', 'export.js', 'similarity.js', 'app.js']);
-// Имена объектов и полей 1С в запросах OData — не текст интерфейса.
-const NOT_UI = new Set(['Catalog_Контрагенты', 'Ref_Key,Code,Description,ИНН,DeletionMark']);
+// Не интерфейс: имена объектов и полей 1С в запросах OData; тема и текст письма-уведомления
+// (письмо уходит на русском, как и само уведомление).
+const NOT_UI = new Set([
+  'Catalog_Контрагенты', 'Ref_Key,Code,Description,ИНН,DeletionMark', 'Голос сотрудника: {1}',
+  '{1}\n\nОткрыть: {2}{3}\n\n—\nГолос сотрудника · ГК «Модус Трейд»\nОтключить письма можно в колокольчике уведомлений.',
+]);
 
 function listJs(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -109,7 +113,7 @@ export async function extractKeys() {
   const client = listJs(join(ROOT, 'public/js'));
   const serverDir = (dir, skip) => readdirSync(join(ROOT, dir)).filter((f) => f.endsWith('.js') && !skip.has(f)).map((f) => join(ROOT, dir, f));
   // Демо-портал — данные внешней системы (названия контрагентов), их не переводим.
-  const server = [...serverDir('src', SERVER_SKIP), ...serverDir('src/integrations', new Set(['demo-portal.js']))];
+  const server = [...serverDir('src', SERVER_SKIP), ...serverDir('src/integrations', new Set(['demo-portal.js', 'demo-smtp.js']))];
   const keys = [...client, ...server].flatMap((file) => literals(readFileSync(file, 'utf8')));
   // В DOM пробелы по краям текста не участвуют в поиске перевода — ключи тоже без них.
   const normalized = [...keys, ...await referenceData()].map((k) => k.trim()).filter((k) => CYRILLIC.test(k) && !NOT_UI.has(k));

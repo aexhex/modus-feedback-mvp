@@ -42,9 +42,21 @@ function statusForm(t, meta, onDone) {
   statusIn.addEventListener('change', () => {
     const s = statusIn.value;
     resolutionField.hidden = !FINAL.includes(s);
+    resolutionIn.placeholder = s === 'rejected' ? 'Почему отклонено — автор увидит эту причину' : 'Что решено и что сделано';
     if (t.resolution && !resolutionIn.value) resolutionIn.value = t.resolution;
     hint.textContent = s === 'need_info' ? 'Сформулируйте вопрос в комментарии — после ответа автора обращение вернётся на рассмотрение.' : '';
   });
+  // Отказ — частое решение: кнопка сразу выбирает статус и ставит курсор в поле причины.
+  // Причина остаётся обязательной: по ТЗ автор всегда получает мотивированный ответ.
+  const canReject = t.permissions.allowedStatuses.some((s) => s.key === 'rejected');
+  const rejectBtn = canReject && h('button', {
+    class: 'btn btn-ghost reject-btn', type: 'button',
+    onclick: () => {
+      statusIn.value = 'rejected';
+      statusIn.dispatchEvent(new Event('change'));
+      resolutionIn.focus();
+    },
+  }, 'Отклонить с причиной');
   return h('form', { class: 'stack', onsubmit: run(async () => {
     if (!statusIn.value) throw new Error('Выберите статус');
     await post(`/tickets/${t.id}/status`, {
@@ -54,7 +66,7 @@ function statusForm(t, meta, onDone) {
     toast('Статус обновлён, автор уведомлён', 'success');
   }, onDone) },
   statusIn, hint, templateIn, field('Комментарий', commentIn), resolutionField,
-  h('button', { class: 'btn btn-primary', type: 'submit' }, 'Применить'));
+  h('div', { class: 'row' }, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Применить'), rejectBtn));
 }
 
 function priorityForm(t, meta, onDone) {

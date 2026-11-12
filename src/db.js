@@ -202,6 +202,11 @@ export function openDatabase(path) {
   ensureColumn(db, 'users', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
   // Интеграции: связь с пользователем Битрикс24, доставка журнала отправки, клиент из 1С УТ.
   ensureColumn(db, 'users', 'b24_id', 'INTEGER');
+  // Рабочие контакты (src/contacts.js) и согласие получать уведомления письмом.
+  ensureColumn(db, 'users', 'position', 'TEXT');
+  ensureColumn(db, 'users', 'email', 'TEXT');
+  ensureColumn(db, 'users', 'phone', 'TEXT');
+  ensureColumn(db, 'users', 'email_notify', 'INTEGER NOT NULL DEFAULT 1');
   // Сессия открыта внутри портала Битрикс24 (во фрейме) — её cookie продлевается с теми же атрибутами.
   ensureColumn(db, 'sessions', 'embedded', 'INTEGER NOT NULL DEFAULT 0');
   // Когда сессия открыта: продление не длится дольше SESSION_MAX_DAYS.

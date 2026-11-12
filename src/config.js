@@ -71,14 +71,18 @@ export const HOLIDAYS = Object.freeze(new Set([
   '2027-02-23', '2027-03-08', '2027-05-03', '2027-05-10', '2027-06-14', '2027-11-04',
 ]));
 
-function isNonWorking(localMs, holidays) {
-  const date = new Date(localMs);
-  return [SATURDAY, SUNDAY].includes(date.getUTCDay()) || holidays.has(date.toISOString().slice(0, 10));
+const NO_DATES = Object.freeze(new Set());
+
+// Выходной — суббота и воскресенье, кроме рабочих выходных по переносу (workdays), плюс праздники.
+function isNonWorking(localMs, { holidays, workdays }) {
+  const day = new Date(localMs).toISOString().slice(0, 10);
+  if (holidays.has(day)) return true;
+  return [SATURDAY, SUNDAY].includes(new Date(localMs).getUTCDay()) && !workdays.has(day);
 }
 
-function skipWeekend(localMs, holidays) {
+function skipWeekend(localMs, calendar) {
   let t = localMs;
-  while (isNonWorking(t, holidays)) {
+  while (isNonWorking(t, calendar)) {
     t = Math.floor(t / DAY_MS) * DAY_MS + DAY_MS;
   }
   return t;
@@ -88,15 +92,17 @@ function skipWeekend(localMs, holidays) {
  * Прибавляет рабочие часы (пн–пт, круглосуточно), пропуская выходные.
  * @param {string} isoDate
  * @param {number} hours
- * @param {Set<string>} [holidays] даты нерабочих дней в формате ГГГГ-ММ-ДД
+ * @param {Set<string> | { holidays: Set<string>, workdays: Set<string> }} [calendar] праздники (ГГГГ-ММ-ДД)
+ *   или производственный календарь: праздники и рабочие выходные по переносу
  * @returns {string}
  */
-export function addBusinessHours(isoDate, hours, holidays = HOLIDAYS) {
+export function addBusinessHours(isoDate, hours, calendar = HOLIDAYS) {
+  const days = calendar instanceof Set ? { holidays: calendar, workdays: NO_DATES } : calendar;
   const offset = BUSINESS_TZ_OFFSET_HOURS * HOUR_MS;
   let t = new Date(isoDate).getTime() + offset;
   let remaining = hours * HOUR_MS;
   while (remaining > 0) {
-    t = skipWeekend(t, holidays);
+    t = skipWeekend(t, days);
     const endOfDay = Math.floor(t / DAY_MS) * DAY_MS + DAY_MS;
     const step = Math.min(remaining, endOfDay - t);
     t += step;

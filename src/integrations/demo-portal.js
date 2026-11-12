@@ -5,6 +5,8 @@
 // показала новых, переведённых и уволенных сотрудников.
 import { randomBytes } from 'node:crypto';
 import { USERS } from '../seed-data.js';
+import { demoContacts } from '../contacts.js';
+import { HOLIDAYS } from '../config.js';
 import { DEMO_CLIENT_ID, DEMO_CLIENT_SECRET, DEMO_PORTAL_PREFIX } from './config.js';
 
 const PAGE = 50;
@@ -53,8 +55,10 @@ function buildData() {
   ];
   const departments = [...new Set(people.map((p) => p.department))].map((name, i) => ({ ID: String(i + 1), NAME: name }));
   const deptId = new Map(departments.map((d) => [d.NAME, d.ID]));
+  // Почта и телефон — те же синтетические, что в демо-датасете системы (по порядку сотрудников).
   const users = people.map((p, i) => ({
     ID: String(101 + i), NAME: p.name, LAST_NAME: '', ACTIVE: p.active, UF_DEPARTMENT: [Number(deptId.get(p.department))],
+    EMAIL: demoContacts(i).email, WORK_PHONE: demoContacts(i).phone, WORK_POSITION: '',
   }));
   const userId = new Map(users.map((u) => [u.NAME, u.ID]));
   for (const d of departments) d.UF_HEAD = userId.get(HEADS[d.NAME]) ?? '';
@@ -62,7 +66,7 @@ function buildData() {
 }
 
 /** @returns {{ handle: (req, res, path: string, body: object) => void, calls: object[] }} */
-export function createDemoPortal() {
+export function createDemoPortal({ mailbox = [] } = {}) {
   const { departments, users } = buildData();
   const calls = [];
   let nextTaskId = 2400;
@@ -188,6 +192,17 @@ ${taskForms ? `<ul class="list-plain">${taskForms}</ul>` : '<p class="t-sub">З�
 </div></main>`);
   }
 
+  function demoCalendar(year, country) {
+    const known = [...HOLIDAYS].some((d) => d.startsWith(`${year}-`));
+    if (country !== 'ru' || !known) return '101';
+    const days = [];
+    for (let t = Date.UTC(year, 0, 1); new Date(t).getUTCFullYear() === year; t += 24 * 3600 * 1000) {
+      const date = new Date(t);
+      days.push([0, 6].includes(date.getUTCDay()) || HOLIDAYS.has(date.toISOString().slice(0, 10)) ? '1' : '0');
+    }
+    return days.join('');
+  }
+
   function token(params) {
     const userId = params.client_id === DEMO_CLIENT_ID && params.client_secret === DEMO_CLIENT_SECRET
       && params.grant_type === 'authorization_code' ? codes.get(String(params.code)) : undefined;
@@ -214,6 +229,21 @@ ${taskForms ? `<ul class="list-plain">${taskForms}</ul>` : '<p class="t-sub">З�
       }
       res.writeHead(page.status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return res.end(page.html);
+    }
+    // Производственный календарь в формате isdayoff.ru: только РФ и только годы встроенного списка праздников.
+    if (path === '/calendar/api/getdata') {
+      record({ system: 'calendar', method: 'getdata', params: { year: params.year, cc: params.cc } });
+      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(demoCalendar(Number(params.year), params.cc));
+    }
+    if (path === '/mail/') {
+      const letters = [...mailbox].reverse().map((m) => `<li class="demo-letter"><div class="row"><b>${escapeHtml(m.subject)}</b></div>
+<div class="t-sub">Кому: ${m.hiddenRecipient ? 'скрыто (анонимное обращение)' : escapeHtml(m.to.join(', '))} · ${escapeHtml(new Date(m.receivedAt).toLocaleString('ru-RU'))}</div>
+<pre>${escapeHtml(m.text)}</pre></li>`).join('');
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY' });
+      return res.end(htmlPage('Демо-почта', `<main class="login demo-oauth"><h1>Демо-почта</h1>
+<p class="login-note">Письма, которые система отправила по SMTP учебному почтовому серверу на этом компьютере. Наружу они не уходят; в рабочей установке письма уходят на почтовый сервер компании (SMTP_HOST). Последние 100 писем.</p>
+${letters ? `<ul class="list-plain">${letters}</ul>` : '<p class="t-sub">Писем пока нет: они появятся, когда сотруднику с рабочей почтой придёт уведомление.</p>'}</main>`));
     }
     if (path === '/b24/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY' });

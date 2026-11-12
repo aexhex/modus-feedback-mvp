@@ -35,6 +35,7 @@ export function registerIntegrationRoutes({ add, admin, PUBLIC, MUTATE }) {
   admin('GET', '/api/admin/integrations', ({ ctx }) => ({
     ...describeConfig(ctx.integrations.config),
     outbox: outboxStats(ctx.db),
+    mailOutbox: outboxStats(ctx.db, 'email'),
     linkedUsers: ctx.db.prepare('SELECT COUNT(*) AS n FROM users WHERE b24_id IS NOT NULL AND is_active = 1').get().n,
     counterparties: counterpartiesCount(ctx.db),
     exportUrl: `${ctx.integrations.endpoints().publicUrl}/api/integrations/1c/tickets`,

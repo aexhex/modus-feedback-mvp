@@ -163,9 +163,9 @@ describe('сессии, имитация Битрикс24, анонимност�
     const admin = await app.as('Администратор системы');
     const items = (await admin.get('/api/admin/outbox')).json.data;
     assert.ok(items.length > 0);
-    assert.equal(items[0].channel, 'bitrix24');
-    assert.equal(items[0].method, 'im.notify');
-    assert.ok(items[0].payload.MESSAGE);
+    const b24 = items.find((i) => i.channel === 'bitrix24');
+    assert.equal(b24.method, 'im.notify');
+    assert.ok(b24.payload.MESSAGE);
     const emp = await app.as('Сотрудник офиса');
     assert.equal((await emp.get('/api/admin/outbox')).status, 403);
   });

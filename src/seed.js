@@ -1,5 +1,6 @@
 // Заполнение пустой БД демонстрационными данными из датасета с правдоподобной историей.
 import { randomBytes } from 'node:crypto';
+import { demoContacts } from './contacts.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { SLA_HOURS, addHours, addBusinessHours } from './config.js';
@@ -193,10 +194,11 @@ export function seedIfEmpty(db, nowIso, uploadsDir = null) {
   const nowMs = new Date(nowIso).getTime();
   inTransaction(db, () => {
     const users = new Map();
-    for (const [name, role, department] of USERS) {
+    for (const [index, [name, role, department]] of USERS.entries()) {
+      const { email, phone } = demoContacts(index);
       const { lastInsertRowid } = db
-        .prepare('INSERT INTO users (name, role, department) VALUES (?, ?, ?)')
-        .run(name, role, department);
+        .prepare('INSERT INTO users (name, role, department, email, phone) VALUES (?, ?, ?, ?, ?)')
+        .run(name, role, department, email, phone);
       users.set(name, Number(lastInsertRowid));
     }
     const categories = new Map();

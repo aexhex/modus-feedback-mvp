@@ -12,6 +12,7 @@ import { escalateOverdue } from './escalation.js';
 import { readIntegrationConfig, resolveEndpoints, DEMO_PORTAL_PREFIX } from './integrations/config.js';
 import { createDelivery, markOutboxHistory } from './integrations/delivery.js';
 import { createDemoPortal } from './integrations/demo-portal.js';
+import { createDemoSmtp } from './integrations/demo-smtp.js';
 import { pollTasks } from './integrations/b24-tasks.js';
 import { runDailySync } from './integrations/daily.js';
 import { backup, backupKeep } from './backup.js';
@@ -95,10 +96,17 @@ export function createApp({
   escalateOverdue(db, now());
   if (seeded) markOutboxHistory(db);
   const config = readIntegrationConfig({ demoMode, overrides: integrationOverrides });
-  const demoPortal = config.b24.mode === 'demo' || config.onec.mode === 'demo' ? createDemoPortal() : null;
+  // Учебный почтовый сервер слушает только 127.0.0.1; письма видны на /demo-portal/mail/.
+  const demoSmtp = config.mail.mode === 'demo' ? createDemoSmtp() : null;
+  demoSmtp?.listen().catch((error) => logger.error('[demo smtp]', error));
+  const demoPortal = config.b24.mode === 'demo' || config.onec.mode === 'demo' || config.calendar.mode === 'demo' || demoSmtp
+    ? createDemoPortal({ mailbox: demoSmtp?.messages ?? [] }) : null;
+  const mailServer = () => (config.mail.mode === 'demo'
+    ? { host: '127.0.0.1', port: demoSmtp.port(), secure: false, from: config.mail.from }
+    : config.mail);
   let server;
   const endpoints = () => resolveEndpoints(config, `http://127.0.0.1:${server.address().port}`);
-  const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger });
+  const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger, mailMode: () => config.mail.mode, mailServer });
   const checkTasks = (options) => pollTasks(db, endpoints().b24, now, options);
   const ctx = { db, uploadsDir, now, demoMode, demoData: seed, secureCookie, logger, integrations: { config, endpoints, delivery, checkTasks } };
   // Показ во фрейме: системе внутри портала Битрикс24 — только порталу компании; в демо — своей странице демо-портала.
@@ -219,5 +227,7 @@ export function createApp({
     server.on('close', () => { clearTimeout(first); clearInterval(every); });
   }
 
-  return { server, db, delivery, demoPortal };
+  if (demoSmtp) server.on('close', () => { demoSmtp.close(); });
+
+  return { server, db, delivery, demoPortal, demoSmtp };
 }

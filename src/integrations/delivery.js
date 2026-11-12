@@ -4,6 +4,7 @@
 //   pending → sending → sent | pending (повтор с паузой) | failed (после MAX_ATTEMPTS) | skipped (некуда слать).
 // Без подключения к порталу записи помечаются simulated — журнал показывает, что ушло бы.
 import { b24Call, IntegrationError } from './clients.js';
+import { sendMail } from './smtp.js';
 import { addEvent } from '../tickets-actions.js';
 import { recordTask } from './b24-tasks.js';
 
@@ -34,6 +35,17 @@ function buildCall(db, row, publicUrl) {
   return { skip: `Неизвестный метод ${row.method}` };
 }
 
+// Письмо: адрес и согласие проверяются в момент отправки — человек мог отключить письма после события.
+function buildMail(db, row, publicUrl) {
+  const user = row.user_id ? db.prepare('SELECT email, email_notify, is_active FROM users WHERE id = ?').get(row.user_id) : null;
+  const anonymous = row.ticket_id ? Boolean(db.prepare('SELECT is_anonymous FROM tickets WHERE id = ?').get(row.ticket_id)?.is_anonymous) : false;
+  if (!user?.email || !user.is_active) return { skip: 'У сотрудника нет рабочей почты' };
+  if (!user.email_notify) return { skip: 'Сотрудник отключил письма' };
+  const payload = JSON.parse(row.payload);
+  const text = `${payload.MESSAGE}\n\nОткрыть: ${publicUrl}${payload.LINK}\n\n—\nГолос сотрудника · ГК «Модус Трейд»\nОтключить письма можно в колокольчике уведомлений.`;
+  return { mail: { to: user.email, fromName: 'Голос сотрудника', subject: payload.SUBJECT, text, hiddenRecipient: anonymous } };
+}
+
 // Битрикс24 может ответить без ошибки, но и без результата: im.notify возвращает false,
 // если получатель не найден или отключён. Такой ответ — не доставка.
 function checkResult(method, result) {
@@ -53,7 +65,7 @@ function onTaskCreated(db, row, taskId, nowIso) {
 /**
  * @param {{ db, mode: () => 'live'|'demo'|'off', endpoints: () => { b24: string, publicUrl: string }, now: () => string, logger?: Console }} options
  */
-export function createDelivery({ db, mode, endpoints, now, logger = console }) {
+export function createDelivery({ db, mode, endpoints, now, logger = console, mailMode = () => 'off', mailServer = () => null }) {
   // Отправка, прерванная перезапуском сервера, возвращается в очередь.
   db.exec("UPDATE outbox SET status = 'pending' WHERE status = 'sending'");
   let running = null;
@@ -74,21 +86,27 @@ export function createDelivery({ db, mode, endpoints, now, logger = console }) {
     let result;
     try {
       const { b24, publicUrl } = endpoints();
-      const call = buildCall(db, row, publicUrl);
+      const isMail = row.channel === 'email';
+      const call = isMail ? buildMail(db, row, publicUrl) : buildCall(db, row, publicUrl);
       if (call.skip) {
         db.prepare("UPDATE outbox SET status = 'skipped', error = ? WHERE id = ?").run(call.skip, row.id);
         return;
       }
-      ({ result } = await b24Call(b24, row.method, call.params));
+      if (isMail) {
+        const server = mailServer();
+        result = await sendMail(server, { ...call.mail, from: server.from });
+      } else {
+        ({ result } = await b24Call(b24, row.method, call.params));
+      }
       if (startedIn !== generation) return;
-      checkResult(row.method, result);
+      if (!isMail) checkResult(row.method, result);
     } catch (error) {
       if (startedIn === generation) fail(row, error);
       return;
     }
     // Портал уже принял вызов: дальше — только запись результата. Ошибка здесь не должна
     // вернуть запись в очередь, иначе задача в Битрикс24 создалась бы второй раз.
-    const externalId = String(result?.task?.id ?? result ?? '');
+    const externalId = String(result?.task?.id ?? result ?? '').slice(0, 120);
     db.prepare("UPDATE outbox SET status = 'sent', attempts = attempts + 1, error = NULL, external_id = ?, sent_at = ? WHERE id = ?")
       .run(externalId, now(), row.id);
     try {
@@ -116,10 +134,10 @@ export function createDelivery({ db, mode, endpoints, now, logger = console }) {
 
   /** Запускает отправку; повторный вызов во время отправки дождётся следующего круга. */
   function kick() {
-    if (mode() === 'off') {
-      db.exec("UPDATE outbox SET status = 'simulated' WHERE status = 'pending'");
-      return Promise.resolve();
-    }
+    // Канал без подключения: записи остаются в журнале как имитация — видно, что ушло бы.
+    const off = [['bitrix24', mode()], ['email', mailMode()]].filter(([, m]) => m === 'off').map(([channel]) => channel);
+    for (const channel of off) db.prepare("UPDATE outbox SET status = 'simulated' WHERE status = 'pending' AND channel = ?").run(channel);
+    if (off.length === 2) return Promise.resolve();
     if (running) {
       again = true;
       return running;
@@ -155,7 +173,7 @@ export function retryOutbox(db, id) {
   return changes > 0;
 }
 
-export function outboxStats(db) {
-  const rows = db.prepare('SELECT status, COUNT(*) AS n FROM outbox GROUP BY status').all();
+export function outboxStats(db, channel = 'bitrix24') {
+  const rows = db.prepare('SELECT status, COUNT(*) AS n FROM outbox WHERE channel = ? GROUP BY status').all(channel);
   return Object.fromEntries(rows.map((r) => [r.status, r.n]));
 }
