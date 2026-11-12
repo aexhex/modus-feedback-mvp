@@ -164,7 +164,7 @@ function shell(me, path, query) {
   mount(root,
     h('aside', { class: 'side' },
       h('div', { class: 'brand' },
-        h('div', { class: 'brand-mark' }, 'М'),
+        h('img', { class: 'brand-mark', src: '/favicon.svg', alt: '', width: 34, height: 34 }),
         h('div', null, h('div', { class: 'brand-name' }, 'Голос сотрудника'), h('div', { class: 'brand-sub' }, 'ГК «Модус Трейд»'))),
       h('nav', { class: 'nav', 'aria-label': 'Основная навигация' },
         h('a', { href: '#/new', class: `nav-cta ${path === '/new' ? 'active' : ''}` }, '+ Новое обращение'),
