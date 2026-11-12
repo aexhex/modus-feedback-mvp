@@ -153,7 +153,7 @@ function shell(me, path, query) {
         navGroups(me).map((g) => h('div', { class: 'nav-group' },
           g.title && h('span', { class: 'nav-title' }, g.title),
           g.items.map((item) => h('a', { href: item.href, class: item.href === current ? 'active' : '', 'aria-current': item.href === current ? 'page' : null }, item.label))))),
-      h('div', { class: 'side-foot' }, 'MVP · демонстрационные данные')),
+      session.meta?.demoData && h('div', { class: 'side-foot' }, 'MVP · демонстрационные данные')),
     h('div', { class: 'main' },
       h('header', { class: 'topbar' },
         installButton(),

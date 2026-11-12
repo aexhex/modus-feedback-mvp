@@ -2,7 +2,7 @@
 // department.get + user.get → сотрудники, их подразделения и руководители подразделений.
 // Сначала предпросмотр (ничего не меняет), затем применение — с повторной загрузкой с портала,
 // чтобы применялось ровно то, что сейчас на портале, а не данные из браузера.
-import { b24List } from './clients.js';
+import { b24List, b24Call } from './clients.js';
 import { inTransaction } from '../db.js';
 import { HttpError } from '../http.js';
 import { updateUser } from '../admin.js';
@@ -40,7 +40,7 @@ function plan(db, portal) {
   const nameCount = new Map();
   for (const p of portal.people) nameCount.set(p.name, (nameCount.get(p.name) ?? 0) + 1);
   const seen = new Set();
-  const skipped = new Set();
+  const skipped = new Map(); // id в системе → { пользователь, кандидаты с портала с тем же ФИО }
   const link = [];
   const update = [];
   const create = [];
@@ -52,7 +52,9 @@ function plan(db, portal) {
       // Поэтому по ФИО не связываются администраторы (только ADMIN_B24_ID) и одинаковые ФИО на портале —
       // их администратор проверяет вручную.
       if (named.role === 'admin' || nameCount.get(p.name) > 1) {
-        skipped.add(named.name);
+        const entry = skipped.get(named.id) ?? { userId: named.id, name: named.name, role: named.role, candidates: [] };
+        if (p.active) entry.candidates.push({ b24Id: p.b24Id, name: p.name, department: p.department });
+        skipped.set(named.id, entry);
         continue;
       }
       local = named;
@@ -77,7 +79,7 @@ function plan(db, portal) {
   const activeLocal = locals.filter((u) => u.is_active).length;
   const dismissCount = update.filter((u) => u.dismiss).length;
   const suspicious = portal.people.length === 0 || dismissCount > Math.max(2, activeLocal * MAX_DISMISS_SHARE);
-  return { departments: portal.departments, portalUsers: portal.people.length, link, update, create, suspicious, skipped: [...skipped] };
+  return { departments: portal.departments, portalUsers: portal.people.length, link, update, create, suspicious, skipped: [...skipped.values()] };
 }
 
 export async function previewOrgSync(db, webhookUrl) {
@@ -92,6 +94,33 @@ export async function previewOrgSync(db, webhookUrl) {
     dismissBlocked: p.suspicious,
     notLinked: p.skipped,
   };
+}
+
+/**
+ * Ручное связывание: администратор сам выбирает, какой сотрудник портала — этот пользователь системы
+ * (одинаковые ФИО, администраторы, не совпавшее написание имени). Связь открывает вход через Битрикс24,
+ * поэтому сотрудник портала проверяется на портале в момент связывания.
+ */
+export async function linkUser(db, webhookUrl, userId, b24Id, nowIso) {
+  const id = Number(b24Id);
+  if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'Неверный ID сотрудника Битрикс24');
+  const user = db.prepare('SELECT id, name, b24_id FROM users WHERE id = ? AND is_active = 1').get(Number(userId));
+  if (!user) throw new HttpError(404, 'Пользователь не найден');
+  if (user.b24_id) throw new HttpError(409, `${user.name}: уже связан с Битрикс24`);
+  if (db.prepare('SELECT 1 FROM users WHERE b24_id = ?').get(id)) throw new HttpError(409, 'Этот сотрудник портала уже связан с другим пользователем');
+  const found = (await b24Call(webhookUrl, 'user.get', { ID: id })).result;
+  const portalUser = (Array.isArray(found) ? found : []).find((u) => Number(u.ID) === id);
+  if (!portalUser || !isActive(portalUser)) throw new HttpError(404, 'На портале нет действующего сотрудника с таким ID');
+  // Пока шёл запрос к порталу, связь мог поставить другой администратор или загрузка оргструктуры.
+  let changes = 0;
+  try {
+    ({ changes } = db.prepare('UPDATE users SET b24_id = ? WHERE id = ? AND b24_id IS NULL').run(id, user.id));
+  } catch (error) {
+    if (!String(error.message).includes('UNIQUE')) throw error;
+  }
+  if (!changes) throw new HttpError(409, 'Связь уже изменилась — обновите предпросмотр');
+  requeueUnlinked(db, new Date(new Date(nowIso).getTime() - REQUEUE_WINDOW_MS).toISOString());
+  return { name: user.name, b24Id: id, portalName: fullName(portalUser) };
 }
 
 /** @returns {{ linked: number, created: number, moved: number, dismissed: number, warnings: string[] }} */

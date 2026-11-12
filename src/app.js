@@ -6,7 +6,7 @@ import { openDatabase } from './db.js';
 import { seedIfEmpty, bootstrapAdmin } from './seed.js';
 import { seedTemplates } from './templates.js';
 import { registerRoutes } from './routes.js';
-import { userByToken } from './auth.js';
+import { userByToken, renewSession, sessionCookie, SESSION_MAX_AGE_S } from './auth.js';
 import { LIMITS, SESSION_COOKIE, ESCALATION_INTERVAL_MS } from './config.js';
 import { escalateOverdue } from './escalation.js';
 import { readIntegrationConfig, resolveEndpoints, DEMO_PORTAL_PREFIX } from './integrations/config.js';
@@ -14,8 +14,9 @@ import { createDelivery, markOutboxHistory } from './integrations/delivery.js';
 import { createDemoPortal } from './integrations/demo-portal.js';
 import { pollTasks } from './integrations/b24-tasks.js';
 import { runDailySync } from './integrations/daily.js';
+import { backup, backupKeep } from './backup.js';
 import {
-  HttpError, createRouter, readJson, ok, fail, sendFile, parseCookies, clientIp,
+  HttpError, createRouter, readJson, readForm, ok, fail, sendFile, parseCookies, clientIp, pageHeaders,
 } from './http.js';
 
 const MIME = {
@@ -45,7 +46,7 @@ function createRateLimiter(limitPerMinute) {
   };
 }
 
-async function serveStatic(publicDir, pathname, res) {
+async function serveStatic(publicDir, pathname, res, frameAncestors) {
   const relative = pathname === '/' ? 'index.html' : pathname.slice(1);
   const filePath = normalize(join(publicDir, relative));
   if (!filePath.startsWith(publicDir + sep)) return fail(res, 404, 'Не найдено');
@@ -54,7 +55,7 @@ async function serveStatic(publicDir, pathname, res) {
     return sendFile(res, 200, body, {
       'Content-Type': MIME[extname(filePath)] ?? 'application/octet-stream',
       'Cache-Control': 'no-cache',
-    });
+    }, pageHeaders(frameAncestors));
   } catch {
     return fail(res, 404, 'Не найдено');
   }
@@ -84,6 +85,8 @@ export function createApp({
   // За HTTPS-прокси: адрес клиента из X-Forwarded-For и cookie сессии только по HTTPS.
   trustProxy = process.env.TRUST_PROXY === '1',
   secureCookie = process.env.COOKIE_SECURE === '1' || /^https:/i.test(process.env.PUBLIC_URL ?? ''),
+  // Каталог резервных копий: если задан, база и вложения копируются раз в сутки.
+  backupDir = process.env.BACKUP_DIR || null,
 }) {
   const db = openDatabase(dbPath);
   const seeded = seed && seedIfEmpty(db, now(), uploadsDir);
@@ -97,7 +100,9 @@ export function createApp({
   const endpoints = () => resolveEndpoints(config, `http://127.0.0.1:${server.address().port}`);
   const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger });
   const checkTasks = (options) => pollTasks(db, endpoints().b24, now, options);
-  const ctx = { db, uploadsDir, now, demoMode, secureCookie, logger, integrations: { config, endpoints, delivery, checkTasks } };
+  const ctx = { db, uploadsDir, now, demoMode, demoData: seed, secureCookie, logger, integrations: { config, endpoints, delivery, checkTasks } };
+  // Показ во фрейме: системе внутри портала Битрикс24 — только порталу компании; в демо — своей странице демо-портала.
+  const frameAncestors = { live: config.sso.portal, demo: "'self'" }[config.sso.mode] ?? null;
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);
@@ -117,8 +122,13 @@ export function createApp({
     if (route.options.mutate && !allowMutation(user?.id ?? ip, Date.now())) {
       return fail(res, 429, 'Слишком много запросов, повторите через минуту');
     }
+    if (user) {
+      const renewed = renewSession(db, token, now());
+      if (renewed) res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_S, { secure: secureCookie, embedded: renewed.embedded }));
+    }
     const hasBody = ['POST', 'PATCH', 'PUT'].includes(req.method);
-    const body = hasBody ? await readJson(req, route.options.bodyLimit ?? LIMITS.jsonBodyBytes) : {};
+    const readBody = route.options.form ? readForm : readJson;
+    const body = hasBody ? await readBody(req, route.options.bodyLimit ?? LIMITS.jsonBodyBytes) : {};
     let statusCode = 200;
     let meta;
     let raw = false;
@@ -151,7 +161,7 @@ export function createApp({
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       if (demoPortal && url.pathname.startsWith(`${DEMO_PORTAL_PREFIX}/`)) return await handleDemoPortal(req, res, url);
       if (req.method !== 'GET') return fail(res, 405, 'Метод не поддерживается');
-      return await serveStatic(publicDir, decodeURIComponent(url.pathname), res);
+      return await serveStatic(publicDir, decodeURIComponent(url.pathname), res, frameAncestors);
     } catch (error) {
       if (error instanceof HttpError) return fail(res, error.status, error.message);
       logger.error(`[${req.method} ${url.pathname}]`, error);
@@ -185,6 +195,21 @@ export function createApp({
   }
   if (config.b24.mode !== 'off' || config.onec.mode !== 'off') {
     const daily = () => runDailySync({ db, config, endpoints, now, logger });
+    const first = setTimeout(daily, DAILY_SYNC_FIRST_MS);
+    const every = setInterval(daily, DAILY_SYNC_MS);
+    first.unref();
+    every.unref();
+    server.on('close', () => { clearTimeout(first); clearInterval(every); });
+  }
+
+  if (backupDir) {
+    const daily = () => {
+      try {
+        backup(db, { uploadsDir, backupDir, keep: backupKeep(process.env.BACKUP_KEEP), nowIso: now() });
+      } catch (error) {
+        logger.error('[backup]', error);
+      }
+    };
     const first = setTimeout(daily, DAILY_SYNC_FIRST_MS);
     const every = setInterval(daily, DAILY_SYNC_MS);
     first.unref();
