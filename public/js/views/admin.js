@@ -62,7 +62,41 @@ function workHoursForm(workHours, reload) {
     h('p', { class: 't-sub' }, 'Рабочий день срока — это окно рабочих часов: обращение, поданное вечером, начинает отсчёт утром следующего рабочего дня.'));
 }
 
-function slaCard(sla, reload, workHours) {
+// Часовой пояс компании: рабочие дни и часы, недели в аналитике, границы суток в отчётах.
+const TIMEZONES = Array.from({ length: 11 }, (_, i) => i + 2).map((n) => ({
+  key: n, label: ({ 3: 'Москва (UTC+3)', 5: 'Казахстан (UTC+5)' })[n] ?? `UTC+${n}`,
+}));
+
+function timezoneForm(timezone, reload) {
+  const select = h('select', { 'aria-label': 'Часовой пояс компании' }, options(TIMEZONES));
+  select.value = String(timezone.offset);
+  // Филиалы в другом поясе: срок обращения считается по поясу подразделения ответственного.
+  const deptSelects = timezone.departmentList.map((name) => {
+    const el = h('select', { 'aria-label': `${t('Часовой пояс')}: ${name}` }, options(TIMEZONES, { empty: 'Как у компании' }));
+    el.value = timezone.departments[name] === undefined ? '' : String(timezone.departments[name]);
+    return [name, el];
+  });
+  const custom = Object.keys(timezone.departments).length;
+  const save = async (e) => {
+    e.preventDefault();
+    try {
+      await patch('/admin/timezone', {
+        offset: Number(select.value),
+        departments: Object.fromEntries(deptSelects.map(([name, el]) => [name, el.value === '' ? null : Number(el.value)])),
+      });
+      toast('Часовой пояс сохранён — сроки новых обращений считаются по нему', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  return h('form', { class: 'stack work-hours', onsubmit: save },
+    h('div', { class: 'row' }, select, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Сохранить пояс')),
+    h('details', { class: 'dept-tz', open: custom > 0 },
+      h('summary', null, `${t('Подразделения в другом поясе')}: ${custom}`),
+      h('p', { class: 't-sub' }, 'Срок обращения считается по поясу подразделения ответственного — ему отвечать. Аналитика и отчёты — по поясу компании.'),
+      h('div', { class: 'dept-tz-grid' }, deptSelects.map(([name, el]) => h('label', { class: 'dept-tz-row' }, h('span', null, name), el)))));
+}
+
+function slaCard(sla, reload, workHours, timezone) {
   const inputs = new Map();
   const num = (item, key) => {
     const input = h('input', { type: 'number', min: 1, max: 90, step: 1, value: String(item[key]), 'aria-label': `${item.label}: ${key === 'firstResponseDays' ? 'первый ответ' : 'решение'}` });
@@ -92,6 +126,9 @@ function slaCard(sla, reload, workHours) {
           h('td', null, num(item, 'firstResponseDays')),
           h('td', null, num(item, 'resolveDays')))))),
       h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить сроки')),
+    h('h3', { style: { marginTop: '20px' } }, 'Часовой пояс'),
+    h('p', { class: 't-sub' }, 'По нему считаются рабочие дни и часы, недели в аналитике и границы суток в отчётах.'),
+    timezoneForm(timezone, reload),
     h('h3', { style: { marginTop: '20px' } }, 'Рабочие часы'),
     workHoursForm(workHours, reload));
 }
@@ -142,10 +179,10 @@ function demoCard() {
 }
 
 export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
-  const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations, workHours] = await Promise.all([
+  const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations, workHours, timezone] = await Promise.all([
     get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
     get('/admin/templates'), get('/admin/calendar'), get('/admin/audit'), get('/admin/targets'), get('/admin/integrations'),
-    get('/admin/work-hours'),
+    get('/admin/work-hours'), get('/admin/timezone'),
   ]);
   const staff = users.filter((u) => u.role !== 'employee' && u.isActive);
   const reload = async () => { await refreshMeta(); rerender(); };
@@ -155,7 +192,7 @@ export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
     meta.demoMode && demoCard(),
     categoriesCard(categories, staff, reload),
     usersAdminCard(users, me, reload),
-    h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload, workHours), holidaysCard(holidays, reload)),
+    h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload, workHours, timezone), holidaysCard(holidays, reload)),
     targetsCard(targets, reload),
     integrationsCard(integrations, reload, outbox.filter((o) => o.channel === 'email')),
     templatesCard(templates, reload),

@@ -31,6 +31,33 @@ export function setupPwa() {
   window.addEventListener('online', () => { banner.hidden = true; });
 }
 
+// Push на этом устройстве: нужны сервис-воркер, Push API и безопасный адрес (HTTPS или localhost).
+export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
+
+export async function currentPushSubscription() {
+  if (!pushSupported()) return null;
+  const registration = await navigator.serviceWorker.ready;
+  return registration.pushManager.getSubscription();
+}
+
+/** Подписывает это устройство; @returns подписку в формате для сервера. */
+export async function subscribePush(publicKey) {
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') throw new Error('Браузер не разрешил уведомления — разрешите их в настройках сайта');
+  const registration = await navigator.serviceWorker.ready;
+  const key = Uint8Array.from(atob(publicKey.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+  const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  return subscription.toJSON();
+}
+
+/** Отписывает это устройство; @returns адрес снятой подписки или null. */
+export async function unsubscribePush() {
+  const subscription = await currentPushSubscription().catch(() => null);
+  if (!subscription) return null;
+  await subscription.unsubscribe().catch(() => {});
+  return subscription.endpoint;
+}
+
 // Кнопка появляется, только когда браузер готов установить приложение.
 export function installButton() {
   const btn = h('button', {

@@ -17,7 +17,9 @@ import { listCategories, listUsers, createCategory, updateCategory, createUser, 
 import { uploadAttachment, readAttachment } from './attachments.js';
 import { listNotifications, markAllRead, listOutbox } from './notifications.js';
 import { setWatching, inviteWatcher, createB24Task } from './collab.js';
-import { getSlaDays, setSla, listHolidays, setHolidays, listCalendar, replaceCalendarYear, getWorkHours, setWorkHours } from './settings.js';
+import {
+  getSlaDays, setSla, listHolidays, setHolidays, listCalendar, replaceCalendarYear, getWorkHours, setWorkHours, getTimezone, setTimezone, getDepartmentTimezones,
+} from './settings.js';
 import { listTargets, setTargets } from './targets.js';
 import { listSolutions } from './solutions.js';
 import { castVote, voteSummary } from './votes.js';
@@ -34,6 +36,7 @@ import { submitClientFeedback, listClientFeedback, markClientFeedback } from './
 import { buildHome } from './home.js';
 import { registerIntegrationRoutes } from './integrations/routes.js';
 import { setContacts } from './contacts.js';
+import { isPushEndpoint } from './integrations/webpush.js';
 import { fetchCalendarYear, validCalendarRequest, CALENDAR_COUNTRIES } from './integrations/calendar.js';
 
 const describeCalendar = (ctx) => {
@@ -180,6 +183,29 @@ export function registerRoutes(router) {
       email: own.email, phone: own.phone, position: own.position, emailNotify: Boolean(own.email_notify),
     };
   });
+  // Push-уведомления: публичный ключ сервера и подписка устройства. Адрес подписки — только служба push
+  // браузера (FCM, Mozilla, Apple, Microsoft): сервер не должен слать запросы куда укажет клиент.
+  add('GET', '/api/push/key', ({ ctx }) => ({ publicKey: ctx.push.keys.publicKey }));
+  add('POST', '/api/me/push', ({ ctx, user, body }) => {
+    const endpoint = String(body.endpoint ?? '');
+    const p256dh = String(body.keys?.p256dh ?? '');
+    const auth = String(body.keys?.auth ?? '');
+    if (endpoint.length > 1000 || (ctx.push.checkHost && !isPushEndpoint(endpoint))) throw badRequest('Адрес подписки не принадлежит службе push браузера');
+    if (Buffer.from(p256dh, 'base64url').length !== 65 || Buffer.from(auth, 'base64url').length !== 16) throw badRequest('Неверные ключи подписки');
+    // Тот же браузер у другого сотрудника: подписка переходит к тому, кто вошёл сейчас.
+    ctx.db.prepare(`INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth`)
+      .run(user.id, endpoint, p256dh, auth, ctx.now());
+    // Не больше 10 устройств на сотрудника: старые подписки удаляются.
+    ctx.db.prepare(`DELETE FROM push_subscriptions WHERE user_id = ? AND id NOT IN (
+                      SELECT id FROM push_subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT 10)`).run(user.id, user.id);
+    return { devices: ctx.db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?').get(user.id).n };
+  }, MUTATE);
+  add('POST', '/api/me/push/remove', ({ ctx, user, body }) => {
+    ctx.db.prepare('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?').run(user.id, String(body.endpoint ?? ''));
+    return { devices: ctx.db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?').get(user.id).n };
+  }, MUTATE);
+
   // Сотрудник сам правит рабочую почту и телефон; должность — только администратор или Битрикс24.
   add('PATCH', '/api/me/contacts', ({ ctx, user, body }) => {
     const changed = setContacts(ctx.db, user.id, { email: body.email ?? '', phone: body.phone ?? '' });
@@ -382,6 +408,18 @@ export function registerRoutes(router) {
     return listHolidays(ctx.db);
   }, MUTATE);
 
+  const timezoneInfo = (db) => ({
+    offset: getTimezone(db),
+    departments: getDepartmentTimezones(db),
+    departmentList: db.prepare('SELECT DISTINCT department FROM users WHERE is_active = 1 ORDER BY department').all().map((r) => r.department),
+  });
+  admin('GET', '/api/admin/timezone', ({ ctx }) => timezoneInfo(ctx.db));
+  admin('PATCH', '/api/admin/timezone', ({ ctx, body, log }) => {
+    const offset = setTimezone(ctx.db, body);
+    const own = Object.entries(getDepartmentTimezones(ctx.db)).map(([d, v]) => `${d}: UTC${v >= 0 ? '+' : ''}${v}`);
+    log('Часовой пояс изменён', [`UTC${offset >= 0 ? '+' : ''}${offset}`, ...own].join('; '));
+    return timezoneInfo(ctx.db);
+  }, MUTATE);
   admin('GET', '/api/admin/work-hours', ({ ctx }) => getWorkHours(ctx.db));
   admin('PATCH', '/api/admin/work-hours', ({ ctx, body, log }) => {
     const hours = setWorkHours(ctx.db, body);

@@ -5,6 +5,7 @@
 // Без подключения к порталу записи помечаются simulated — журнал показывает, что ушло бы.
 import { b24Call, IntegrationError } from './clients.js';
 import { sendMail } from './smtp.js';
+import { sendPush } from './webpush.js';
 import { addEvent } from '../tickets-actions.js';
 import { recordTask } from './b24-tasks.js';
 
@@ -65,7 +66,9 @@ function onTaskCreated(db, row, taskId, nowIso) {
 /**
  * @param {{ db, mode: () => 'live'|'demo'|'off', endpoints: () => { b24: string, publicUrl: string }, now: () => string, logger?: Console }} options
  */
-export function createDelivery({ db, mode, endpoints, now, logger = console, mailMode = () => 'off', mailServer = () => null }) {
+export function createDelivery({
+  db, mode, endpoints, now, logger = console, mailMode = () => 'off', mailServer = () => null, pushContext = () => null,
+}) {
   // Отправка, прерванная перезапуском сервера, возвращается в очередь.
   db.exec("UPDATE outbox SET status = 'pending' WHERE status = 'sending'");
   let running = null;
@@ -81,25 +84,50 @@ export function createDelivery({ db, mode, endpoints, now, logger = console, mai
       .run(attempts >= MAX_ATTEMPTS ? 'failed' : 'pending', attempts, error.message, Date.now() + RETRY_BASE_MS * 2 ** (attempts - 1), row.id);
   }
 
+  // Push: на все устройства сотрудника; подписку, которую браузер отозвал (404/410), удаляем.
+  async function deliverPush(row) {
+    const ctx = pushContext();
+    const user = db.prepare('SELECT is_active FROM users WHERE id = ?').get(row.user_id);
+    const subscriptions = user?.is_active ? db.prepare('SELECT * FROM push_subscriptions WHERE user_id = ?').all(row.user_id) : [];
+    if (!ctx || subscriptions.length === 0) return { skip: 'Сотрудник не включил push-уведомления' };
+    const payload = JSON.parse(row.payload);
+    const message = { title: 'Голос сотрудника', body: payload.MESSAGE, url: payload.LINK };
+    // Все устройства сразу: одно зависшее не задерживает остальные.
+    const results = await Promise.allSettled(subscriptions.map((subscription) => sendPush(subscription, message, ctx)));
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value === 'gone') db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(subscriptions[i].id);
+    });
+    const sent = results.filter((r) => r.status === 'fulfilled' && r.value === 'sent').length;
+    const failed = results.find((r) => r.status === 'rejected');
+    if (!sent && failed) throw failed.reason;
+    return sent ? { result: `устройств: ${sent}` } : { skip: 'Подписки на устройствах больше не действуют' };
+  }
+
   async function sendOne(row) {
     const startedIn = generation;
     let result;
     try {
       const { b24, publicUrl } = endpoints();
       const isMail = row.channel === 'email';
-      const call = isMail ? buildMail(db, row, publicUrl) : buildCall(db, row, publicUrl);
+      const isPush = row.channel === 'push';
+      let call;
+      if (isPush) call = await deliverPush(row);
+      else call = isMail ? buildMail(db, row, publicUrl) : buildCall(db, row, publicUrl);
+      if (startedIn !== generation) return;
       if (call.skip) {
         db.prepare("UPDATE outbox SET status = 'skipped', error = ? WHERE id = ?").run(call.skip, row.id);
         return;
       }
-      if (isMail) {
+      if (isPush) {
+        ({ result } = call);
+      } else if (isMail) {
         const server = mailServer();
         result = await sendMail(server, { ...call.mail, from: server.from });
       } else {
         ({ result } = await b24Call(b24, row.method, call.params));
       }
       if (startedIn !== generation) return;
-      if (!isMail) checkResult(row.method, result);
+      if (row.channel === 'bitrix24') checkResult(row.method, result);
     } catch (error) {
       if (startedIn === generation) fail(row, error);
       return;
@@ -137,7 +165,8 @@ export function createDelivery({ db, mode, endpoints, now, logger = console, mai
     // Канал без подключения: записи остаются в журнале как имитация — видно, что ушло бы.
     const off = [['bitrix24', mode()], ['email', mailMode()]].filter(([, m]) => m === 'off').map(([channel]) => channel);
     for (const channel of off) db.prepare("UPDATE outbox SET status = 'simulated' WHERE status = 'pending' AND channel = ?").run(channel);
-    if (off.length === 2) return Promise.resolve();
+    // Push от подключений не зависит: выходим, только если отправлять нечего.
+    if (!db.prepare("SELECT 1 FROM outbox WHERE status = 'pending' LIMIT 1").get()) return Promise.resolve();
     if (running) {
       again = true;
       return running;

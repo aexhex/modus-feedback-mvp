@@ -81,3 +81,26 @@ test('рабочие часы включаются в настройках ср�
   await page.getByRole('button', { name: 'Сохранить часы' }).click();
   await expect(page.locator('.toast-success').last()).toContainText('Рабочие часы сохранены');
 });
+
+test('профиль: блок push-уведомлений показывает состояние этого устройства', async ({ page }) => {
+  await loginAs(page, 'Сотрудник офиса');
+  await page.goto('/#/profile');
+  await expect(page.getByRole('heading', { name: 'Push-уведомления' })).toBeVisible();
+  // 127.0.0.1 — безопасный адрес, Chromium поддерживает Push API: устройство ещё не подписано.
+  await expect(page.getByText('Выключены на этом устройстве.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Включить на этом устройстве' })).toBeVisible();
+});
+
+test('часовой пояс подразделения задаётся в настройках сроков', async ({ page }) => {
+  await loginAs(page, 'Администратор системы');
+  await page.goto('/#/admin');
+  await page.locator('.dept-tz > summary').click();
+  await page.getByLabel('Часовой пояс: Бухгалтерия').selectOption('3');
+  await page.getByRole('button', { name: 'Сохранить пояс' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Часовой пояс сохранён');
+  await expect(page.locator('.dept-tz > summary')).toContainText('Подразделения в другом поясе: 1');
+  // Вернуть как было.
+  await page.getByLabel('Часовой пояс: Бухгалтерия').selectOption('');
+  await page.getByRole('button', { name: 'Сохранить пояс' }).click();
+  await expect(page.locator('.dept-tz > summary')).toContainText('Подразделения в другом поясе: 0');
+});

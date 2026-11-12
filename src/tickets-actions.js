@@ -8,7 +8,7 @@ import { inTransaction } from './db.js';
 import { resolveAssignee } from './routing.js';
 import { notify } from './notifications.js';
 import { getTicketRow, getVisibleTicketRow, isFinal, watcherIds } from './tickets-query.js';
-import { getSla, getCalendar } from './settings.js';
+import { getSla, getCalendarFor } from './settings.js';
 import { validCounterpartyId } from './integrations/onec.js';
 
 function text(value, { field, min = 0, max, required = false }) {
@@ -65,8 +65,8 @@ export function createTicket(db, user, input, now) {
   return inTransaction(db, () => {
     const code = nextCode(db);
     const sla = getSla(db)[data.priority];
-    const holidays = getCalendar(db);
     const assignment = resolveAssignee(db, data.categoryId);
+    const holidays = getCalendarFor(db, assignment.userId);
     const { lastInsertRowid } = db
       .prepare(
         `INSERT INTO tickets (code, type, category_id, title, description, proposed_solution, priority, status,
@@ -200,7 +200,7 @@ export function setPriority(db, user, id, input, now) {
   if (!canProcess(user, row)) throw forbidden();
   const priority = oneOf(input.priority, PRIORITIES, 'Приоритет');
   const sla = getSla(db)[priority];
-  const holidays = getCalendar(db);
+  const holidays = getCalendarFor(db, row.assignee_id);
   inTransaction(db, () => {
     db.prepare(
       'UPDATE tickets SET priority = ?, first_response_due = ?, due_at = ?, updated_at = ? WHERE id = ?',
