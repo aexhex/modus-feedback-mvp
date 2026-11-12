@@ -26,11 +26,18 @@ function buildCall(db, row, publicUrl) {
     return { params: { USER_ID: b24Id, MESSAGE: `${payload.MESSAGE}${link}` } };
   }
   if (row.method === 'tasks.task.add') {
-    const fields = { TITLE: payload.TITLE, DESCRIPTION: `${payload.MESSAGE}${link}`, DEADLINE: payload.DEADLINE };
-    // Без сопоставления ответственным станет владелец вебхука — задача всё равно не потеряется.
-    return { params: { fields: b24Id ? { ...fields, RESPONSIBLE_ID: b24Id } : fields } };
+    // RESPONSIBLE_ID обязателен в tasks.task.add: без сопоставления задача ждёт загрузки оргструктуры.
+    if (!b24Id) return { skip: NOT_LINKED };
+    return { params: { fields: { TITLE: payload.TITLE, DESCRIPTION: `${payload.MESSAGE}${link}`, DEADLINE: payload.DEADLINE, RESPONSIBLE_ID: b24Id } } };
   }
   return { skip: `Неизвестный метод ${row.method}` };
+}
+
+// Битрикс24 может ответить без ошибки, но и без результата: im.notify возвращает false,
+// если получатель не найден или отключён. Такой ответ — не доставка.
+function checkResult(method, result) {
+  if (method === 'im.notify' && !result) throw new IntegrationError('Битрикс24 im.notify: уведомление не создано — получатель не найден или отключён');
+  if (method === 'tasks.task.add' && !result?.task?.id) throw new IntegrationError('Битрикс24 tasks.task.add: портал не вернул номер задачи');
 }
 
 function onTaskCreated(db, row, taskId, nowIso) {
@@ -49,6 +56,9 @@ export function createDelivery({ db, mode, endpoints, now, logger = console }) {
   db.exec("UPDATE outbox SET status = 'pending' WHERE status = 'sending'");
   let running = null;
   let again = false;
+  // Поколение данных: сброс демо-данных его увеличивает, и ответы на вызовы, отправленные
+  // до сброса, больше не трогают базу (иначе события старых задач попали бы в новый датасет).
+  let generation = 0;
 
   function fail(row, error) {
     if (!(error instanceof IntegrationError)) logger.error('[b24 delivery]', error);
@@ -58,6 +68,7 @@ export function createDelivery({ db, mode, endpoints, now, logger = console }) {
   }
 
   async function sendOne(row) {
+    const startedIn = generation;
     let result;
     try {
       const { b24, publicUrl } = endpoints();
@@ -67,8 +78,10 @@ export function createDelivery({ db, mode, endpoints, now, logger = console }) {
         return;
       }
       ({ result } = await b24Call(b24, row.method, call.params));
+      if (startedIn !== generation) return;
+      checkResult(row.method, result);
     } catch (error) {
-      fail(row, error);
+      if (startedIn === generation) fail(row, error);
       return;
     }
     // Портал уже принял вызов: дальше — только запись результата. Ошибка здесь не должна
@@ -89,7 +102,9 @@ export function createDelivery({ db, mode, endpoints, now, logger = console }) {
       const rows = db
         .prepare("SELECT * FROM outbox WHERE status = 'pending' AND (next_at IS NULL OR next_at <= ?) ORDER BY id LIMIT ?")
         .all(Date.now(), BATCH);
+      const batchGeneration = generation;
       for (const row of rows) {
+        if (batchGeneration !== generation) break;
         db.prepare("UPDATE outbox SET status = 'sending' WHERE id = ?").run(row.id);
         await sendOne(row);
       }
@@ -113,7 +128,12 @@ export function createDelivery({ db, mode, endpoints, now, logger = console }) {
     return running;
   }
 
-  return { kick, idle: () => running ?? Promise.resolve() };
+  return {
+    kick,
+    idle: () => running ?? Promise.resolve(),
+    /** Вызывается перед сбросом данных: незавершённые отправки больше не пишут в базу. */
+    invalidate: () => { generation += 1; },
+  };
 }
 
 // После загрузки оргструктуры недавние уведомления, не отправленные из-за отсутствия связи
