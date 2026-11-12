@@ -119,6 +119,29 @@ describe('вход через демо-портал Битрикс24', () => {
     assert.equal(callback.headers.get('location'), '/', 'после связывания администратор входит через портал');
   });
 
+  it('администратор отвязывает сотрудника: вход через портал закрыт, сессии закрыты', async () => {
+    const admin = await app.as('Администратор системы');
+    const b24Id = b24IdOf(app, 'Сотрудник офиса');
+    const employee = await app.as('Сотрудник офиса');
+    assert.equal((await employee.post('/api/admin/integrations/b24/unlink', { userId: app.userId('Сотрудник офиса') })).status, 403);
+    const users = (await admin.get('/api/admin/users')).json.data;
+    assert.equal(users.find((u) => u.name === 'Сотрудник офиса').b24Id, b24Id, 'администратор видит ID Битрикс24');
+    const listed = (await app.request(null, 'GET', '/api/demo-users')).json.data.users;
+    assert.equal(listed[0].b24Id, undefined, 'список для входа ID не показывает');
+
+    const res = await admin.post('/api/admin/integrations/b24/unlink', { userId: app.userId('Сотрудник офиса') });
+    assert.equal(res.status, 200);
+    assert.equal(b24IdOf(app, 'Сотрудник офиса'), null);
+    assert.equal((await employee.get('/api/me')).status, 401, 'открытая сессия закрыта');
+    const { callback } = await loginViaPortal(app, b24Id);
+    assert.equal(callback.headers.get('location'), '/?login_error=not_linked');
+    assert.ok((await admin.get('/api/admin/audit')).json.data.some((a) => a.action === 'Сотрудник отвязан от Битрикс24'));
+    assert.equal((await admin.post('/api/admin/integrations/b24/unlink', { userId: app.userId('Сотрудник офиса') })).status, 409);
+    assert.equal((await admin.post('/api/admin/integrations/b24/unlink', { userId: app.userId('Администратор системы') })).status, 400, 'свою связь не снять');
+    // Вернуть связь — тем же ручным связыванием.
+    assert.equal((await admin.post('/api/admin/integrations/b24/link', { userId: app.userId('Сотрудник офиса'), b24Id })).status, 200);
+  });
+
   it('уволенного на портале связать нельзя', async () => {
     const admin = await app.as('Администратор системы');
     const unlinked = app.db.prepare("INSERT INTO users (name, role, department) VALUES ('Новый сотрудник', 'employee', 'IT')").run().lastInsertRowid;

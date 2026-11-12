@@ -23,10 +23,11 @@ export function listCategories(db, { activeOnly = false } = {}) {
 }
 
 // По умолчанию — только действующие пользователи; администратору показываются и отключённые.
-export function listUsers(db, { includeInactive = false } = {}) {
+// withB24 — ID в Битрикс24 (только для администратора: список для входа его не показывает).
+export function listUsers(db, { includeInactive = false, withB24 = false } = {}) {
   return db
     .prepare(
-      `SELECT id, name, role, department, is_available AS isAvailable, is_active AS isActive
+      `SELECT id, name, role, department, is_available AS isAvailable, is_active AS isActive${withB24 ? ', b24_id AS b24Id' : ''}
        FROM users ${includeInactive ? '' : 'WHERE is_active = 1'} ORDER BY role, name`,
     )
     .all()
