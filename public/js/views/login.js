@@ -1,6 +1,6 @@
 // Вход в два шага: сначала роль (четыре крупные карточки), затем конкретный человек.
 // Если в роли один пользователь, вход выполняется сразу — так демо проходит быстрее.
-import { h, mount, toast, themeToggle } from '../dom.js';
+import { h, svg, mount, toast, themeToggle } from '../dom.js';
 import { langSwitch } from '../i18n.js';
 import { get } from '../api.js';
 
@@ -58,6 +58,18 @@ function b24Login(options, error) {
       : 'Вход учётной записью вашего портала Битрикс24. Пароль вводится на портале, система его не видит.'));
 }
 
+// Полный логотип ГК «Модус Трейд»: знак и надпись. Кольцо и буквы — цветом текста логотипа
+// (тёмно-синий в светлой теме, белый в тёмной), красный круг — фирменный.
+function brandLogo() {
+  const mark = svg('svg', { class: 'brand-logo-mark', viewBox: '0 0 100 100', 'aria-hidden': 'true' },
+    svg('path', { fill: 'currentColor', d: 'M4.7 42A46 46 0 0 1 95.3 42H80A31 31 0 0 0 20 42Z' }),
+    svg('path', { fill: 'currentColor', d: 'M4.7 58A46 46 0 0 0 95.3 58H80A31 31 0 0 1 20 58Z' }),
+    svg('circle', { cx: 50, cy: 50.5, r: 17.5, fill: '#ed1111' }),
+    svg('circle', { cx: 56.3, cy: 44.6, r: 5.4, fill: '#fff' }));
+  return h('div', { class: 'brand-logo', role: 'img', 'aria-label': 'ГК «Модус Трейд»' },
+    mark, h('span', { class: 'brand-logo-text', 'aria-hidden': 'true' }, h('span', null, 'МОДУС'), h('span', null, 'ТРЕЙД')));
+}
+
 function hero(options) {
   return h('div', { class: 'login-hero' },
     h('div', null,
@@ -73,7 +85,7 @@ function hero(options) {
 export async function renderLogin(root, { onLogin }) {
   const options = await get('/auth/options');
   const error = takeLoginError();
-  const top = h('div', { class: 'login-top' }, langSwitch(), themeToggle());
+  const top = h('div', { class: 'login-top' }, brandLogo(), h('div', { class: 'login-top-tools' }, langSwitch(), themeToggle()));
   if (!options.list) {
     mount(root, h('div', { class: 'login' }, top, hero(options), b24Login(options, error ?? null)));
     return;
