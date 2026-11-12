@@ -76,6 +76,25 @@ export function holidaysCard(calendar, reload) {
       h('div', null, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Сохранить календарь'))));
 }
 
+// Срок хранения персональных данных уволенных и ручной прогон обезличивания.
+export function retentionCard(retention, reload) {
+  const select = h('select', { 'aria-label': 'Срок хранения данных уволенных' },
+    options(retention.options.map((m) => ({ key: m, label: `${m} ${t('мес.')}` })), { empty: 'Не обезличивать' }));
+  select.value = retention.months ? String(retention.months) : '';
+  const save = guarded(() => patch('/admin/retention', { months: select.value === '' ? null : Number(select.value) }), reload, t('Срок хранения сохранён'));
+  const run = guarded(async () => {
+    const r = await post('/admin/retention/run');
+    toast(`${t('Обезличено')}: ${r.anonymized}`, 'success');
+  }, reload);
+  return h('section', { class: 'card' },
+    h('h3', null, 'Хранение персональных данных'),
+    h('p', { class: 't-sub' }, 'Через выбранный срок после отключения у уволенного удаляются имя, рабочие контакты и связь с Битрикс24 — вместо имени остаётся «Бывший сотрудник №…». Обращения и статистика сохраняются. Проверка — раз в сутки.'),
+    h('form', { class: 'row work-hours', onsubmit: save }, select, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Сохранить срок')),
+    h('p', null, `${t('Ожидают обезличивания')}: ${retention.due}`),
+    retention.due > 0 && h('button', { class: 'btn btn-sm', type: 'button', onclick: run }, 'Обезличить сейчас'),
+    h('p', { class: 't-sub' }, 'Обезличить одного уволенного сразу (например, по его просьбе) — кнопка «Обезличить» в таблице пользователей.'));
+}
+
 export function usersAdminCard(users, me, reload) {
   const save = (u, body, message) => guarded(() => patch(`/admin/users/${u.id}`, body), reload, message);
   const row = (u) => {
@@ -89,6 +108,14 @@ export function usersAdminCard(users, me, reload) {
       if (!window.confirm(`${u.name}: ${t('отвязать от Битрикс24? Этот человек больше не сможет входить через портал под этой учётной записью, его открытые сессии закроются.')}`)) return;
       guarded(() => post('/admin/integrations/b24/unlink', { userId: u.id }), reload, `${u.name}: ${t('отвязан от Битрикс24')}`)();
     };
+    // Уволенного можно обезличить сразу — по его просьбе; обезличенная запись помечается.
+    const anonymize = () => {
+      if (!window.confirm(`${u.name}: ${t('обезличить? Имя, почта, телефон и связь с Битрикс24 будут удалены без возможности восстановления. Обращения останутся без имени.')}`)) return;
+      guarded(() => post(`/admin/users/${u.id}/anonymize`), reload, t('Персональные данные обезличены'))();
+    };
+    const privacy = u.anonymizedAt
+      ? h('span', { class: 'chip' }, 'обезличен')
+      : !u.isActive && h('button', { class: 'btn btn-ghost btn-sm', type: 'button', 'aria-label': `${t('Обезличить')}: ${u.name}`, onclick: anonymize }, 'Обезличить');
     const b24 = u.b24Id
       ? h('div', { class: 'b24-link' }, h('span', { class: 't-sub' }, `ID ${u.b24Id}`),
         !isSelf && h('button', { class: 'btn btn-ghost btn-sm', type: 'button', 'aria-label': `${t('Отвязать от Битрикс24')}: ${u.name}`, onclick: unlink }, 'Отвязать'))
@@ -103,7 +130,7 @@ export function usersAdminCard(users, me, reload) {
       h('form', { class: 'stack', onsubmit: guarded(() => patch(`/admin/users/${u.id}/contacts`, { position: positionIn.value, email: emailIn.value, phone: phoneIn.value }), reload, `${u.name}: ${t('контакты сохранены')}`) },
         positionIn, emailIn, phoneIn, h('div', null, h('button', { class: 'btn btn-sm btn-primary', type: 'submit' }, 'Сохранить'))));
     return h('tr', { class: u.isActive ? '' : 'user-off' },
-      h('td', null, h('b', null, u.name), isSelf && h('span', { class: 'chip' }, 'это вы'),
+      h('td', null, h('b', null, u.name), isSelf && h('span', { class: 'chip' }, 'это вы'), privacy,
         (u.email || u.phone) && h('div', { class: 't-sub', 'data-no-i18n': '' }, [u.email, u.phone].filter(Boolean).join(' · ')), contacts),
       h('td', null, role),
       h('td', null, department),

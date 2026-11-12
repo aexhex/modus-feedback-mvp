@@ -215,6 +215,11 @@ export function openDatabase(path) {
   ensureColumn(db, 'users', 'email', 'TEXT');
   ensureColumn(db, 'users', 'phone', 'TEXT');
   ensureColumn(db, 'users', 'email_notify', 'INTEGER NOT NULL DEFAULT 1');
+  // Хранение персональных данных уволенных (src/retention.js): когда отключён и когда обезличен.
+  ensureColumn(db, 'users', 'deactivated_at', 'TEXT');
+  ensureColumn(db, 'users', 'anonymized_at', 'TEXT');
+  // Отключённые до появления колонки: срок хранения отсчитывается с момента обновления.
+  db.exec("UPDATE users SET deactivated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE is_active = 0 AND deactivated_at IS NULL");
   // Сессия открыта внутри портала Битрикс24 (во фрейме) — её cookie продлевается с теми же атрибутами.
   ensureColumn(db, 'sessions', 'embedded', 'INTEGER NOT NULL DEFAULT 0');
   // Когда сессия открыта: продление не длится дольше SESSION_MAX_DAYS.
