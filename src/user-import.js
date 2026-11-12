@@ -1,9 +1,10 @@
 // Импорт пользователей из CSV (задел под выгрузку оргструктуры из 1С).
-// Формат строки: имя;роль;подразделение. Разделитель «;» или «,», первая строка может быть заголовком.
+// Формат строки: имя;роль;подразделение[;почта;телефон]. Разделитель «;» или «,», первая строка может быть заголовком.
 // Корректные строки добавляются, ошибочные возвращаются со списком причин.
 import { badRequest, HttpError } from './http.js';
 import { inTransaction } from './db.js';
 import { createUser } from './admin.js';
+import { parseContacts, setContacts } from './contacts.js';
 
 const MAX_ROWS = 500;
 const MAX_CHARS = 60_000;
@@ -52,14 +53,18 @@ export function importUsers(db, input) {
     const created = [];
     const skipped = [];
     for (const { line, cells } of rows) {
-      const [name = '', roleRaw = '', department = ''] = cells;
+      const [name = '', roleRaw = '', department = '', email = '', phone = ''] = cells;
       const role = ROLE_ALIASES[roleRaw.toLowerCase()];
       if (!role) {
         skipped.push({ line, name, reason: `неизвестная роль «${roleRaw}»` });
         continue;
       }
       try {
-        created.push(createUser(db, { name, role, department }).name);
+        // Контакты проверяются до создания: строка с неверной почтой не добавляется вовсе.
+        const contacts = parseContacts({ email, phone });
+        const user = createUser(db, { name, role, department });
+        if (contacts.email || contacts.phone) setContacts(db, user.id, contacts);
+        created.push(user.name);
       } catch (error) {
         if (!(error instanceof HttpError)) throw error;
         skipped.push({ line, name, reason: error.message });
