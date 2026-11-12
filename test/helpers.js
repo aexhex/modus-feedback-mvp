@@ -13,7 +13,7 @@ export async function startTestApp(options = {}) {
   const uploadsDir = mkdtempSync(join(tmpdir(), 'fb-test-'));
   const { server, db, delivery, demoPortal, demoSmtp } = createApp({
     dbPath: ':memory:', uploadsDir, publicDir: join(import.meta.dirname, '..', 'public'), logger: silentLogger,
-    now: () => current, escalationIntervalMs: 0, ...options,
+    now: () => current, escalationIntervalMs: 0, allowListLogin: true, ...options,
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;

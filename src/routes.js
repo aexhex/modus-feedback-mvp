@@ -46,7 +46,7 @@ const describeCalendar = (ctx) => {
 };
 import { IntegrationError } from './integrations/clients.js';
 import {
-  stateCookieName, newState, stateCookie, stateMatches, authorizeUrl, b24UserByCode, b24UserByToken,
+  stateCookieName, newState, stateCookie, stateMatches, authorizeUrl, b24UserByCode, b24UserByAppToken,
 } from './integrations/b24-sso.js';
 
 const TASK_WAIT_MS = 3000;
@@ -55,9 +55,12 @@ const delay = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref()
 
 const toList = (dict) => Object.entries(dict).map(([key, label]) => ({ key, label }));
 
-// Вход выбором из списка — в демо-режиме (через демо-портал) и пока вход через Битрикс24 не настроен.
-// С настоящим порталом список закрыт даже при DEMO_MODE=1: забытая переменная не должна открыть вход без пароля.
-const listLoginAllowed = (ctx) => ctx.integrations.config.sso.mode !== 'live';
+// Вход выбором из списка — без пароля, поэтому только в демо-режиме (через демо-портал) или по явному
+// ALLOW_LIST_LOGIN=1. С настоящим порталом список закрыт всегда: забытая переменная не должна открыть вход.
+const listLoginAllowed = (ctx) => {
+  const { mode } = ctx.integrations.config.sso;
+  return mode === 'demo' || (mode === 'off' && ctx.allowListLogin);
+};
 
 function requireListLogin(ctx) {
   if (!listLoginAllowed(ctx)) throw forbidden('Вход — через Битрикс24');
@@ -167,10 +170,10 @@ export function registerRoutes(router) {
   // Система внутри портала: пункт левого меню и вкладка в задаче. Битрикс24 открывает адрес приложения
   // во фрейме и присылает формой ключ доступа текущего сотрудника (AUTH_ID) — второй раз входить не нужно.
   add('POST', '/api/auth/b24/app', async ({ ctx, req, body, redirect }) => {
-    ssoConfig(ctx);
+    const sso = ssoConfig(ctx);
     const endpoints = ctx.integrations.endpoints().sso;
     if (!fromPortal(req, endpoints) || !body.AUTH_ID) return redirect('/?login_error=denied');
-    const portalUser = await askPortal(ctx, () => b24UserByToken(endpoints, String(body.AUTH_ID)));
+    const portalUser = await askPortal(ctx, () => b24UserByAppToken(sso, endpoints, String(body.AUTH_ID)));
     if (!portalUser) return redirect('/?login_error=failed');
     const session = portalSession(ctx, portalUser, { embedded: true });
     return session.error ? redirect(`/?login_error=${session.error}`) : redirect(embedTarget(ctx.db, body), [session.cookie]);
@@ -233,7 +236,7 @@ export function registerRoutes(router) {
     transitions: TRANSITIONS,
     templates: listTemplates(ctx.db),
     sla: getSlaDays(ctx.db),
-    demoMode: ctx.demoMode,
+    demoMode: ctx.demoMode && ctx.integrations.config.b24.mode !== 'live',
     demoData: ctx.demoData,
     b24Mode: ctx.integrations.config.b24.mode,
     hasCounterparties: ctx.db.prepare('SELECT 1 FROM counterparties WHERE is_active = 1 LIMIT 1').get() !== undefined,
@@ -313,6 +316,8 @@ export function registerRoutes(router) {
     sendRaw(file.body, {
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      // Вложения обращений не остаются в кэше браузера и прокси общего компьютера.
+      'Cache-Control': 'no-store',
     });
   });
 
@@ -354,7 +359,7 @@ export function registerRoutes(router) {
     submitClientFeedback(ctx.db, body, ctx.now());
     status(201);
     return { accepted: true };
-  }, { public: true, mutate: true, strict: true });
+  }, { public: true, mutate: true, strict: 'feedback' });
   add('GET', '/api/client-feedback', ({ ctx, user }) => listClientFeedback(ctx.db, user));
   add('PATCH', '/api/client-feedback/:id', ({ ctx, user, params, body }) => {
     markClientFeedback(ctx.db, user, params.id, body);
@@ -506,7 +511,7 @@ export function registerRoutes(router) {
   }, { mutate: true, bodyLimit: 128 * 1024 });
   // Сброс удаляет все сессии, поэтому администратор после него попадает на экран входа.
   admin('POST', '/api/admin/demo-reset', ({ ctx, user, res }) => {
-    if (!ctx.demoMode) throw forbidden('Сброс данных доступен только в демо-режиме');
+    if (!ctx.demoMode || ctx.integrations.config.b24.mode === 'live') throw forbidden('Сброс данных доступен только в демо-режиме');
     ctx.integrations.delivery.invalidate();
     resetDemo(ctx.db, ctx.uploadsDir, user.name, ctx.now());
     res.setHeader('Set-Cookie', sessionCookie('', 0, { secure: ctx.secureCookie }));

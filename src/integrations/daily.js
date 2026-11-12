@@ -2,6 +2,8 @@
 // 1С УТ: контрагенты загружаются автоматически — это безопасно, старые обращения сохраняют клиента.
 // Битрикс24: оргструктура только проверяется. Применение (в том числе отключение уволенных
 // и передачу их обращений) подтверждает администратор — ему приходит уведомление со сводкой.
+// Сессии уволенных на портале закрываются сразу: до решения администратора доступа у них нет,
+// а войти снова через Битрикс24 уволенный не может.
 import { createHash } from 'node:crypto';
 import { syncCounterparties } from './onec.js';
 import { previewOrgSync } from './b24-org.js';
@@ -22,6 +24,9 @@ function orgSummary(p) {
 /** @returns {Promise<string|null>} сводка изменений, о которых сообщено, или null */
 export async function checkOrgChanges(db, webhookUrl, nowIso) {
   const preview = await previewOrgSync(db, webhookUrl);
+  let loggedOut = 0;
+  for (const id of preview.dismissedIds) loggedOut += db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id).changes;
+  if (loggedOut) audit(db, null, 'Сессии уволенных в Битрикс24 закрыты', `по ежедневной проверке: ${loggedOut}`, nowIso);
   const summary = orgSummary(preview);
   const signature = summary
     ? createHash('sha256').update(JSON.stringify([preview.created, preview.moved, preview.dismissed, preview.linked])).digest('hex')

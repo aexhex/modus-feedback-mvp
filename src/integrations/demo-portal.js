@@ -8,6 +8,7 @@ import { USERS } from '../seed-data.js';
 import { demoContacts } from '../contacts.js';
 import { HOLIDAYS } from '../config.js';
 import { DEMO_CLIENT_ID, DEMO_CLIENT_SECRET, DEMO_PORTAL_PREFIX } from './config.js';
+import { decodeComponent } from '../http.js';
 
 const PAGE = 50;
 const CALLS_KEPT = 100; // журнал вызовов демо-портала ограничен: портал открыт без входа
@@ -259,6 +260,11 @@ ${letters ? `<ul class="list-plain">${letters}</ul>` : '<p class="t-sub">Пис�
         client_endpoint: `http://${req.headers.host}${DEMO_PORTAL_PREFIX}/b24/rest/`, server_endpoint: 'https://oauth.bitrix.info/rest/',
       });
     }
+    if (path === '/b24/rest/app.info.json') {
+      record({ system: 'b24', method: 'app.info' });
+      if (!tokens.has(String(params.auth))) return send(401, { error: 'invalid_token', error_description: 'The access token provided is invalid.' });
+      return send(200, { result: { ID: 1, CODE: DEMO_CLIENT_ID, STATUS: 'L', INSTALLED: true } });
+    }
     if (path === '/b24/rest/user.current.json') {
       record({ system: 'b24', method: 'user.current' });
       const user = users.find((u) => u.ID === tokens.get(String(params.auth)));
@@ -272,7 +278,7 @@ ${letters ? `<ul class="list-plain">${letters}</ul>` : '<p class="t-sub">Пис�
       record({ system: 'b24', method: b24Match[1], params });
       return send(200, method(params));
     }
-    if (decodeURIComponent(path) === '/1c/odata/standard.odata/Catalog_Контрагенты') {
+    if (decodeComponent(path) === '/1c/odata/standard.odata/Catalog_Контрагенты') {
       record({ system: '1c', method: 'Catalog_Контрагенты' });
       return send(200, {
         value: DEMO_COUNTERPARTIES.map(([name, code, inn], i) => ({

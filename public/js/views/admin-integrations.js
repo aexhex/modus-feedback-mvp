@@ -25,7 +25,7 @@ const OUTBOX_STATUS = {
   skipped: ['Не отправлено', 'status-need_info'],
   simulated: ['Имитация', 'status-closed'],
 };
-const ROLE_LABELS = { employee: 'Сотрудник', handler: 'Ответственный' };
+const ROLE_LABELS = { employee: 'Сотрудник', handler: 'Ответственный', manager: 'Руководитель' };
 
 const modeBadge = (mode, labels = MODE_LABELS) => h('span', { class: `badge ${mode === 'off' ? 'status-closed' : 'status-implemented'}` }, labels[mode]);
 const MAIL_LABELS = { ...MODE_LABELS, demo: 'Демо-почта' };
@@ -63,6 +63,10 @@ function orgPreview(p, applyBtn, refresh) {
     empty ? h('p', null, 'Изменений нет — данные совпадают с порталом.') : [
       p.linked.length > 0 && h('div', { class: 'sync-group' },
         h('b', null, `${t('Будут связаны с Битрикс24')}: ${p.linked.length}`), h('p', { class: 't-sub' }, p.linked.join(', '))),
+      p.checkLinks?.length > 0 && h('div', { class: 'sync-group' },
+        h('b', null, `${t('Сверьте перед применением')}: ${p.checkLinks.length}`),
+        h('p', { class: 't-sub' }, 'Ответственные и руководители связываются по ФИО, а ФИО на портале сотрудник может поменять сам. Убедитесь, что ID на портале — их.'),
+        h('ul', { class: 'list-plain' }, p.checkLinks.map((u) => h('li', null, h('b', null, u.name), ` — ${t(ROLE_LABELS[u.role]).toLowerCase()}, ID ${u.b24Id}`)))),
       group('Новые сотрудники', p.created, (u) => [h('b', null, u.name), ` — ${t(u.department)}, ${t(ROLE_LABELS[u.role]).toLowerCase()}`]),
       group('Перевод в другое подразделение', p.moved, (u) => [h('b', null, u.name), `: ${t(u.from)} → ${t(u.to)}`]),
       p.dismissBlocked && p.dismissed.length > 0

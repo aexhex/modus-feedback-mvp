@@ -454,9 +454,38 @@ describe('рабочая установка', () => {
   it('за прокси адрес клиента берётся из X-Forwarded-For, иначе — адрес соединения', async () => {
     const { clientIp } = await import('../src/http.js');
     const req = { headers: { 'x-forwarded-for': '10.1.2.3, 172.16.0.1' }, socket: { remoteAddress: '127.0.0.1' } };
-    assert.equal(clientIp(req, true), '10.1.2.3');
+    assert.equal(clientIp(req, true), '172.16.0.1', 'последний адрес дописал наш прокси, левые подставляет клиент');
     assert.equal(clientIp(req, false), '127.0.0.1', 'без TRUST_PROXY заголовку не доверяем');
     assert.equal(clientIp({ headers: {}, socket: { remoteAddress: '::1' } }, true), '::1');
+  });
+
+  it('битая кодировка в адресе и cookie — 400 или игнор, а не 500', async () => {
+    const app = await startTestApp();
+    try {
+      assert.equal((await fetch(`${app.base}/api/tickets/%`)).status, 400);
+      assert.equal((await fetch(`${app.base}/%zz`)).status, 400);
+      const cookie = await fetch(`${app.base}/api/auth/options`, { headers: { cookie: 'x=%; other=1' } });
+      assert.equal(cookie.status, 200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('без входа через Битрикс24 и без ALLOW_LIST_LOGIN выбор из списка закрыт', async () => {
+    const app = await startTestApp({ allowListLogin: false });
+    try {
+      assert.equal((await app.request(null, 'GET', '/api/auth/options')).json.data.list, false);
+      assert.equal((await app.request(null, 'GET', '/api/demo-users')).status, 403);
+      assert.equal((await app.request(null, 'POST', '/api/session', { userId: app.userId('Администратор системы') })).status, 403);
+    } finally {
+      await app.close();
+    }
+    const demo = await startTestApp({ allowListLogin: false, demoMode: true });
+    try {
+      assert.equal((await demo.request(null, 'GET', '/api/auth/options')).json.data.list, true, 'в демо-режиме — через демо-портал');
+    } finally {
+      await demo.close();
+    }
   });
 
   it('по HTTPS cookie сессии помечается Secure', async () => {

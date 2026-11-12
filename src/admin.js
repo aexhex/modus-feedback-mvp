@@ -104,11 +104,11 @@ export function createUser(db, input) {
 // иначе они висели бы на человеке, который не может войти, а эскалации уходили бы в пустоту.
 function reassignOpenTickets(db, leaver, now) {
   const open = db
-    .prepare(`SELECT id, code, title, category_id FROM tickets
+    .prepare(`SELECT id, code, title, category_id, author_id, is_anonymous FROM tickets
               WHERE assignee_id = ? AND status NOT IN (${FINAL_STATUSES.map((s) => `'${s}'`).join(',')})`)
     .all(leaver.id);
   for (const t of open) {
-    const { userId, reason } = resolveAssignee(db, t.category_id);
+    const { userId, reason } = resolveAssignee(db, t.category_id, { excludeId: t.is_anonymous ? t.author_id : null });
     db.prepare('UPDATE tickets SET assignee_id = ?, updated_at = ? WHERE id = ?').run(userId, now, t.id);
     addEvent(db, { ticketId: t.id, actorId: null, kind: 'assigned', body: `${leaver.name} больше не обрабатывает обращения. ${reason}`, at: now });
     notify(db, { userIds: [userId], ticketId: t.id, actorId: null, now, text: `Вам передано обращение ${t.code}: ${t.title}` });

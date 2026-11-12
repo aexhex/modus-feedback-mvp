@@ -18,7 +18,8 @@
     "video": "playwright test --config playwright.video.config.js",
     "video:voice": "node scripts/mix-voice.mjs",
     "i18n:check": "node scripts/i18n-extract.mjs --list",
-    "backup": "node scripts/backup.mjs"
+    "backup": "node scripts/backup.mjs",
+    "loadtest": "node scripts/loadtest.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

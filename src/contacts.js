@@ -29,8 +29,9 @@ export function parseContacts(input = {}) {
 
 /** @returns {string[] | null} изменённые поля — для журнала действий; null — пользователя нет */
 export function setContacts(db, userId, input) {
-  const current = db.prepare('SELECT id, position, email, phone FROM users WHERE id = ?').get(Number(userId));
+  const current = db.prepare('SELECT id, position, email, phone, anonymized_at FROM users WHERE id = ?').get(Number(userId));
   if (!current) return null;
+  if (current.anonymized_at) throw badRequest('Данные уже обезличены');
   const parsed = parseContacts(input);
   const next = Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, v === undefined ? current[k] : v]));
   db.prepare('UPDATE users SET position = ?, email = ?, phone = ? WHERE id = ?').run(next.position, next.email, next.phone, current.id);
