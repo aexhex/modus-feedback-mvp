@@ -1,5 +1,6 @@
 // Отказ с причиной, контакты в карточке, письма-уведомления и производственный календарь — глазами пользователя.
 import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { loginAs, openTicket } from './helpers.js';
 
 test('«Отклонить с причиной»: статус выбран, курсор в поле причины, без причины не отклонить', async ({ page }) => {
@@ -51,4 +52,32 @@ test('производственный календарь загружается
   await card.getByRole('button', { name: 'Загрузить производственный календарь' }).click();
   await expect(page.locator('.toast-success').last()).toContainText('2027');
   await expect(card.getByLabel('Праздничные дни')).toHaveValue(/2027-01-04/);
+});
+
+test('мой профиль: щелчок по имени, сотрудник сам меняет телефон', async ({ page }) => {
+  await loginAs(page, 'Сотрудник офиса');
+  await page.locator('.user-chip').click();
+  await expect(page.getByRole('heading', { name: 'Мой профиль' })).toBeVisible();
+  await page.getByLabel('Рабочий телефон').fill('+7 (000) 777-00-11');
+  await page.getByRole('button', { name: 'Сохранить контакты' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Контакты сохранены');
+  await page.reload();
+  await expect(page.getByLabel('Рабочий телефон')).toHaveValue('+7 (000) 777-00-11');
+  const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  expect(axe.violations.filter((v) => ['serious', 'critical'].includes(v.impact)).map((v) => v.id)).toEqual([]);
+});
+
+test('рабочие часы включаются в настройках сроков', async ({ page }) => {
+  await loginAs(page, 'Администратор системы');
+  await page.goto('/#/admin');
+  await page.getByText('Учитывать рабочие часы').click();
+  await page.getByLabel('Начало рабочего дня').selectOption('9');
+  await page.getByLabel('Конец рабочего дня').selectOption('18');
+  await page.getByRole('button', { name: 'Сохранить часы' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Рабочие часы сохранены');
+  await expect(page.getByLabel('Начало рабочего дня')).toBeEnabled();
+  // Вернуть как было: другие тесты считают сроки сутками.
+  await page.getByText('Учитывать рабочие часы').click();
+  await page.getByRole('button', { name: 'Сохранить часы' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Рабочие часы сохранены');
 });

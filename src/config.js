@@ -98,6 +98,7 @@ function skipWeekend(localMs, calendar) {
  */
 export function addBusinessHours(isoDate, hours, calendar = HOLIDAYS) {
   const days = calendar instanceof Set ? { holidays: calendar, workdays: NO_DATES } : calendar;
+  if (days.workHours) return addWorkingHours(isoDate, hours, days);
   const offset = BUSINESS_TZ_OFFSET_HOURS * HOUR_MS;
   let t = new Date(isoDate).getTime() + offset;
   let remaining = hours * HOUR_MS;
@@ -105,6 +106,31 @@ export function addBusinessHours(isoDate, hours, calendar = HOLIDAYS) {
     t = skipWeekend(t, days);
     const endOfDay = Math.floor(t / DAY_MS) * DAY_MS + DAY_MS;
     const step = Math.min(remaining, endOfDay - t);
+    t += step;
+    remaining -= step;
+  }
+  return new Date(t - offset).toISOString();
+}
+
+/**
+ * Сроки с учётом рабочих часов: рабочий день SLA — это окно workHours (например, 9–18), а не сутки.
+ * «1 рабочий день» = (end − start) рабочих часов; вечером и в выходные отсчёт стоит.
+ */
+function addWorkingHours(isoDate, hours, days) {
+  const { start, end } = days.workHours;
+  const offset = BUSINESS_TZ_OFFSET_HOURS * HOUR_MS;
+  let t = new Date(isoDate).getTime() + offset;
+  let remaining = (hours / 24) * (end - start) * HOUR_MS;
+  while (remaining > 0) {
+    const dayStart = Math.floor(t / DAY_MS) * DAY_MS;
+    const open = dayStart + start * HOUR_MS;
+    const close = dayStart + end * HOUR_MS;
+    if (isNonWorking(t, days) || t >= close) {
+      t = dayStart + DAY_MS + start * HOUR_MS;
+      continue;
+    }
+    t = Math.max(t, open);
+    const step = Math.min(remaining, close - t);
     t += step;
     remaining -= step;
   }

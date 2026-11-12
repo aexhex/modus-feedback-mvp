@@ -36,7 +36,33 @@ function categoriesCard(categories, staff, reload) {
 }
 
 // Сроки SLA в рабочих днях; действуют для обращений, созданных после сохранения.
-function slaCard(sla, reload) {
+// Рабочие часы: рабочий день SLA — окно, например с 9 до 18; без них — сутки целиком.
+function workHoursForm(workHours, reload) {
+  const hoursOptions = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => ({ key: from + i, label: `${String(from + i).padStart(2, '0')}:00` }));
+  const enabled = h('input', { type: 'checkbox', checked: Boolean(workHours) });
+  const startIn = h('select', { 'aria-label': 'Начало рабочего дня' }, options(hoursOptions(0, 23)));
+  const endIn = h('select', { 'aria-label': 'Конец рабочего дня' }, options(hoursOptions(1, 24)));
+  startIn.value = String(workHours?.start ?? 9);
+  endIn.value = String(workHours?.end ?? 18);
+  const sync = () => { startIn.disabled = !enabled.checked; endIn.disabled = !enabled.checked; };
+  enabled.onchange = sync;
+  sync();
+  const save = async (e) => {
+    e.preventDefault();
+    try {
+      await patch('/admin/work-hours', { enabled: enabled.checked, start: Number(startIn.value), end: Number(endIn.value) });
+      toast('Рабочие часы сохранены — действуют для новых сроков', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  return h('form', { class: 'stack work-hours', onsubmit: save },
+    h('label', { class: 'check' }, enabled, h('span', null, 'Учитывать рабочие часы')),
+    h('div', { class: 'row' }, h('span', null, 'с'), startIn, h('span', null, 'до'), endIn,
+      h('button', { class: 'btn btn-sm', type: 'submit' }, 'Сохранить часы')),
+    h('p', { class: 't-sub' }, 'Рабочий день срока — это окно рабочих часов: обращение, поданное вечером, начинает отсчёт утром следующего рабочего дня.'));
+}
+
+function slaCard(sla, reload, workHours) {
   const inputs = new Map();
   const num = (item, key) => {
     const input = h('input', { type: 'number', min: 1, max: 90, step: 1, value: String(item[key]), 'aria-label': `${item.label}: ${key === 'firstResponseDays' ? 'первый ответ' : 'решение'}` });
@@ -65,7 +91,9 @@ function slaCard(sla, reload) {
           h('td', null, h('b', null, item.label)),
           h('td', null, num(item, 'firstResponseDays')),
           h('td', null, num(item, 'resolveDays')))))),
-      h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить сроки')));
+      h('button', { class: 'btn btn-primary', type: 'submit', style: { marginTop: '12px' } }, 'Сохранить сроки')),
+    h('h3', { style: { marginTop: '20px' } }, 'Рабочие часы'),
+    workHoursForm(workHours, reload));
 }
 
 // Целевые значения показателей (ТЗ 2.7): на странице «Показатели» рядом с фактом видна цель.
@@ -114,9 +142,10 @@ function demoCard() {
 }
 
 export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
-  const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations] = await Promise.all([
+  const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations, workHours] = await Promise.all([
     get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
     get('/admin/templates'), get('/admin/calendar'), get('/admin/audit'), get('/admin/targets'), get('/admin/integrations'),
+    get('/admin/work-hours'),
   ]);
   const staff = users.filter((u) => u.role !== 'employee' && u.isActive);
   const reload = async () => { await refreshMeta(); rerender(); };
@@ -126,7 +155,7 @@ export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
     meta.demoMode && demoCard(),
     categoriesCard(categories, staff, reload),
     usersAdminCard(users, me, reload),
-    h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload), holidaysCard(holidays, reload)),
+    h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload, workHours), holidaysCard(holidays, reload)),
     targetsCard(targets, reload),
     integrationsCard(integrations, reload, outbox.filter((o) => o.channel === 'email')),
     templatesCard(templates, reload),
