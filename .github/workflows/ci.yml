@@ -41,3 +41,21 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  docker:
+    # Образ ни разу не собирался на машине разработки (Docker там не установлен) — собираем здесь.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Сборка образа
+        run: docker build -t feedback-mvp .
+      - name: Контейнер отвечает (рабочий режим, без демо-данных)
+        run: |
+          docker run -d --name app -p 3000:3000 -e DEMO_DATA=0 feedback-mvp
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/demo-users | grep -q 'Администратор системы'; then exit 0; fi
+            sleep 1
+          done
+          docker logs app
+          exit 1
