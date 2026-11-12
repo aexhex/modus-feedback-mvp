@@ -1,6 +1,6 @@
 // Сводка за неделю для руководителя: что изменилось за 7 дней по сравнению с предыдущими семью,
 // плюс готовый текст для рассылки (в MVP рассылка в Битрикс24 имитируется журналом).
-import { buildReport, buildAnalytics } from './analytics.js';
+import { buildReport, overdueTickets } from './analytics.js';
 import { npsOf } from './client-feedback.js';
 import { logOutbox } from './notifications.js';
 import { tzOffsetMs } from './settings.js';
@@ -72,7 +72,7 @@ export function buildDigest(db, nowIso) {
       implemented: current.totals.implemented - previous.totals.implemented,
     },
     implemented: current.implemented,
-    overdue: buildAnalytics(db, nowIso).overdue.slice(0, 5),
+    overdue: overdueTickets(db, nowIso).slice(0, 5),
     topVoted: topVoted(db),
     clients: clientWeek(db, from, to),
   };

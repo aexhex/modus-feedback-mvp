@@ -27,7 +27,7 @@ function similarPanel() {
       } }, 'У меня тоже');
       return h('div', { class: 'similar-item' },
         h('div', { class: 'row' }, h('span', { class: 't-code' }, s.code), h('span', { class: `badge status-${s.status}` }, s.statusLabel), h('span', { class: 'score' }, `сходство ${Math.round(s.score * 100)}%`)),
-        h('div', { class: 't-title' }, s.title),
+        h('div', { class: 't-title' }, s.title ?? 'Анонимное обращение — тема скрыта'),
         h('div', { class: 't-sub' }, s.type === 'idea' ? s.category : `${s.category} · у кого так же: ${s.supportsCount}`),
         // Вопрос уже рассмотрен — показываем итог, чтобы не подавать то же самое заново.
         s.resolution && h('div', { class: `already-solved ${s.status === 'rejected' ? 'rejected' : ''}` },
@@ -224,7 +224,8 @@ export function renderNew(el, { me, meta, go, rerender }) {
           h('span', { class: 'field-hint' }, 'Фото с камеры сжимается автоматически. Файлы: PDF, изображения, txt, docx, xlsx, csv — до 5 МБ каждый')),
         h('label', { class: 'check anon-box' }, anonIn,
           h('span', null, h('b', null, 'Подать анонимно'),
-            h('div', { class: 'field-hint' }, 'Ваше имя и подразделение скрыты от всех, включая руководителей. Вы по-прежнему видите статус, получаете ответы и можете отвечать на уточнения в комментариях.'))),
+            h('div', { class: 'field-hint' }, 'Ваше имя и подразделение скрыты от всех, включая руководителей. Вы по-прежнему видите статус, получаете ответы и можете отвечать на уточнения в комментариях.'),
+            h('div', { class: 'field-hint' }, 'Имена файлов заменяются на «Вложение N». В свойствах документа Word, Excel или PDF может быть записан автор — надёжнее приложить снимок экрана.'))),
         h('label', { class: 'check anon-box' }, publicIn,
           h('span', null, h('b', null, 'Показать в «Идеях коллег»'),
             h('div', { class: 'field-hint' }, 'Обращение смогут читать, комментировать и поддерживать все сотрудники. Для предложений включается автоматически — снимите отметку, если тема не для всех.'))),

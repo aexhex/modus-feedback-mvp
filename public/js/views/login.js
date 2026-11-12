@@ -44,6 +44,11 @@ function takeLoginError() {
 }
 
 function b24Login(options, error) {
+  // Рабочая установка без входа через портал и без явного разрешения входа из списка: войти нельзя никак.
+  if (!options.b24 && !options.list) {
+    return h('p', { class: 'login-error', role: 'alert' },
+      'Вход не настроен. Администратору: подключите вход через Битрикс24 (B24_CLIENT_ID) или, только во внутренней сети, разрешите вход выбором из списка (ALLOW_LIST_LOGIN=1).');
+  }
   if (!options.b24) return null;
   return h('div', { class: 'b24-login' },
     error ? h('p', { class: 'login-error', role: 'alert' }, error) : null,

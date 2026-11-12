@@ -460,7 +460,9 @@ describe('ежедневная синхронизация', () => {
       const endpoints = () => resolveEndpoints(config, app.base);
       const run = () => runDailySync({ db: app.db, config, endpoints, now: () => '2026-11-12T03:00:00.000Z', logger: { error: () => {} } });
 
+      const leaver = await app.as('Руководитель проекта');
       const first = await run();
+      assert.equal((await leaver.get('/api/me')).status, 401, 'сессия уволенного на портале закрыта сразу');
       assert.equal(first.counterparties.total, 7);
       assert.match(first.org, /новых: 3/);
       assert.match(first.org, /уволено: 1/);

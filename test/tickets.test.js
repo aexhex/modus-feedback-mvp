@@ -137,6 +137,16 @@ describe('создание и маршрутизация', () => {
     assert.equal(seen.events[0].actorName, 'Автор (анонимно)');
   });
 
+  it('анонимное обращение не назначается самому автору — иначе его выдало бы имя ответственного', async () => {
+    const author = await app.as('Ответственный за договоры');
+    const anon = (await author.post('/api/tickets', newTicket(app, {
+      categoryId: categoryId(app, 'Договорная работа'), isAnonymous: true,
+    }))).json.data;
+    assert.equal(anon.assignee.name, 'Руководитель продаж', 'резервный вместо автора');
+    const open = (await author.post('/api/tickets', newTicket(app, { categoryId: categoryId(app, 'Договорная работа') }))).json.data;
+    assert.equal(open.assignee.name, 'Ответственный за договоры', 'неанонимное — по правилу');
+  });
+
   it('похожие обращения находятся по тексту', async () => {
     const emp = await app.as('Сотрудник офиса');
     const r = await emp.get(`/api/tickets/similar?text=${encodeURIComponent('в заявках на оборудование не хватает параметров изделия')}`);

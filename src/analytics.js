@@ -51,9 +51,16 @@ function repeatedTopics(rows, nowIso) {
     .sort((a, b) => b.weight - a.weight);
 }
 
-function similarPairs(rows) {
+// Возможные дубликаты ищутся среди свежих открытых обращений: сравнение «каждое с каждым» квадратично,
+// и на тысячах открытых обращений заняло бы секунды. Старые к этому времени уже разобраны.
+const SIMILAR_PAIRS_MAX = 400;
+
+function similarPairs(rows, nowIso) {
+  const since = new Date(new Date(nowIso).getTime() - REPEAT_WINDOW_DAYS * 24 * HOUR_MS).toISOString();
   const open = rows
-    .filter((r) => !isFinal(r.status) && r.type !== 'praise')
+    .filter((r) => !isFinal(r.status) && r.type !== 'praise' && r.created_at >= since)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, SIMILAR_PAIRS_MAX)
     .map((r) => ({ r, tokens: tokenize(`${r.title} ${r.description}`) }));
   const pairs = [];
   for (let i = 0; i < open.length; i += 1) {
@@ -74,9 +81,11 @@ function similarPairs(rows) {
 // Карта повторяющихся проблем за последние 90 дней: категория × подразделение.
 // В ячейке — сколько сотрудников подразделения столкнулись с проблемой: подали обращение
 // или отметили «У меня тоже». Одна категория в нескольких подразделениях — сигнал системной проблемы.
+// Анонимные обращения в разрезе подразделений не учитываются: категория анонимного видна руководителю,
+// и единственная ячейка небольшого подразделения выдала бы автора.
 function problemMap(db, rows, nowIso) {
   const since = new Date(new Date(nowIso).getTime() - REPEAT_WINDOW_DAYS * 24 * HOUR_MS).toISOString();
-  const recent = rows.filter((r) => r.type !== 'praise' && r.created_at >= since && !r.duplicate_of);
+  const recent = rows.filter((r) => r.type !== 'praise' && r.created_at >= since && !r.duplicate_of && !r.is_anonymous);
   const recentById = new Map(recent.map((r) => [r.id, r]));
   const supporters = db
     .prepare('SELECT s.ticket_id, u.department FROM supports s JOIN users u ON u.id = s.user_id')
@@ -201,16 +210,23 @@ function clientsBreakdown(db) {
   return { items, linked };
 }
 
-export function buildAnalytics(db, nowIso) {
-  const rows = db.prepare(BASE_SELECT).all();
-  const finals = rows.filter((r) => isFinal(r.status));
-  const overdue = rows
+function overdueOf(rows, nowIso) {
+  return rows
     .map((r) => ({ r, sla: slaState(r, nowIso) }))
     .filter(({ sla }) => sla.overdue)
     .map(({ r, sla }) => ({
       id: r.id, code: r.code, title: r.title, assignee: r.assignee_name, kind: sla.kind,
       priorityLabel: PRIORITIES[r.priority], statusLabel: STATUSES[r.status],
     }));
+}
+
+/** Просроченные обращения — без остальной аналитики (для сводки недели). */
+export const overdueTickets = (db, nowIso) => overdueOf(db.prepare(BASE_SELECT).all(), nowIso);
+
+export function buildAnalytics(db, nowIso) {
+  const rows = db.prepare(BASE_SELECT).all();
+  const finals = rows.filter((r) => isFinal(r.status));
+  const overdue = overdueOf(rows, nowIso);
   const kpi = {
     reviewedShare: share(rows.filter((r) => r.first_response_at).length, rows.length),
     closedShare: share(finals.length, rows.length),
@@ -231,9 +247,9 @@ export function buildAnalytics(db, nowIso) {
     byType: countBy(rows, (r) => r.type, TYPES),
     byStatus: countBy(rows, (r) => r.status, STATUSES),
     byCategory: countBy(rows, (r) => r.category_name),
-    byDepartment: countBy(rows, (r) => r.department),
+    byDepartment: countBy(rows.filter((r) => !r.is_anonymous), (r) => r.department),
     repeatedTopics: repeatedTopics(rows, nowIso),
-    similarPairs: similarPairs(rows),
+    similarPairs: similarPairs(rows, nowIso),
     weekly: weeklyDynamics(rows, nowIso, tzOffsetMs(db)),
     workload: workload(rows, nowIso),
     timeInStatus: timeInStatus(db),

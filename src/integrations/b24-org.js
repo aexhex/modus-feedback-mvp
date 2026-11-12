@@ -87,7 +87,7 @@ function plan(db, portal) {
     }
     seen.add(local.id);
     if (p.active) contacts.push({ id: local.id, ...p.contacts });
-    if (!local.b24_id) link.push({ id: local.id, name: local.name, b24Id: p.b24Id });
+    if (!local.b24_id) link.push({ id: local.id, name: local.name, role: local.role, b24Id: p.b24Id, byName: Boolean(named) });
     if (local.is_active && p.active && local.department !== p.department) {
       update.push({ id: local.id, name: local.name, from: local.department, to: p.department });
     }
@@ -109,9 +109,13 @@ export async function previewOrgSync(db, webhookUrl) {
     departments: p.departments,
     portalUsers: p.portalUsers,
     linked: p.link.map(({ name }) => name),
+    // ФИО на портале сотрудник меняет сам: связь по ФИО для ответственных и руководителей администратор сверяет
+    // по ID портала до применения, чтобы однофамилец-«самозванец» не получил их доступ.
+    checkLinks: p.link.filter((l) => l.byName && l.role !== 'employee').map(({ name, role, b24Id }) => ({ name, role, b24Id })),
     created: p.create.map(({ name, department, role }) => ({ name, department, role })),
     moved: p.update.filter((u) => !u.dismiss).map(({ name, from, to }) => ({ name, from, to })),
     dismissed: p.update.filter((u) => u.dismiss).map(({ name }) => name),
+    dismissedIds: p.suspicious ? [] : p.update.filter((u) => u.dismiss).map(({ id }) => id),
     dismissBlocked: p.suspicious,
     notLinked: p.skipped,
   };

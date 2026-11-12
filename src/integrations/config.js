@@ -61,7 +61,8 @@ export function readIntegrationConfig({ env = process.env, demoMode = false, ove
         user: pick('smtpUser', 'SMTP_USER'), password: pick('smtpPassword', 'SMTP_PASSWORD'), from: smtpFrom,
         allowPlain: ['1', 'true', true].includes(pick('smtpAllowPlain', 'SMTP_ALLOW_PLAIN')),
       }
-      : { mode: demoMode ? 'demo' : 'off', from: DEMO_MAIL_FROM },
+      // Учебный ящик открыт без входа, поэтому рядом с настоящим порталом он не включается.
+      : { mode: demoMode && !b24WebhookUrl ? 'demo' : 'off', from: DEMO_MAIL_FROM },
     // Производственный календарь: открытый сервис (по умолчанию isdayoff.ru); в демо-режиме — демо-портал.
     calendar: {
       mode: calendarUrl || !demoMode ? 'live' : 'demo', url: calendarUrl ?? DEFAULT_CALENDAR_URL, country: calendarCountry,
