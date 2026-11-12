@@ -37,14 +37,28 @@ function plan(db, portal) {
   const locals = db.prepare('SELECT id, name, role, department, is_active, b24_id FROM users').all();
   const byB24 = new Map(locals.filter((u) => u.b24_id).map((u) => [u.b24_id, u]));
   const byName = new Map(locals.filter((u) => !u.b24_id).map((u) => [u.name, u]));
+  const nameCount = new Map();
+  for (const p of portal.people) nameCount.set(p.name, (nameCount.get(p.name) ?? 0) + 1);
   const seen = new Set();
+  const skipped = new Set();
   const link = [];
   const update = [];
   const create = [];
   for (const p of portal.people) {
-    const local = byB24.get(p.b24Id) ?? byName.get(p.name);
-    // Совпадение по ФИО используется один раз: однофамилец на портале не привяжется к тому же человеку.
-    if (local && !local.b24_id) byName.delete(p.name);
+    let local = byB24.get(p.b24Id);
+    const named = local ? null : byName.get(p.name);
+    if (named) {
+      // Связь с порталом открывает вход через Битрикс24, а ФИО в профиле портала сотрудник может поменять сам.
+      // Поэтому по ФИО не связываются администраторы (только ADMIN_B24_ID) и одинаковые ФИО на портале —
+      // их администратор проверяет вручную.
+      if (named.role === 'admin' || nameCount.get(p.name) > 1) {
+        skipped.add(named.name);
+        continue;
+      }
+      local = named;
+      // Совпадение по ФИО используется один раз.
+      byName.delete(p.name);
+    }
     if (!local) {
       if (p.active) create.push({ ...p, role: p.isHead ? 'handler' : 'employee' });
       continue;
@@ -63,7 +77,7 @@ function plan(db, portal) {
   const activeLocal = locals.filter((u) => u.is_active).length;
   const dismissCount = update.filter((u) => u.dismiss).length;
   const suspicious = portal.people.length === 0 || dismissCount > Math.max(2, activeLocal * MAX_DISMISS_SHARE);
-  return { departments: portal.departments, portalUsers: portal.people.length, link, update, create, suspicious };
+  return { departments: portal.departments, portalUsers: portal.people.length, link, update, create, suspicious, skipped: [...skipped] };
 }
 
 export async function previewOrgSync(db, webhookUrl) {
@@ -76,6 +90,7 @@ export async function previewOrgSync(db, webhookUrl) {
     moved: p.update.filter((u) => !u.dismiss).map(({ name, from, to }) => ({ name, from, to })),
     dismissed: p.update.filter((u) => u.dismiss).map(({ name }) => name),
     dismissBlocked: p.suspicious,
+    notLinked: p.skipped,
   };
 }
 

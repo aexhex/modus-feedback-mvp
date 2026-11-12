@@ -17,13 +17,14 @@ test('администратор загружает оргструктуру и�
   await expect(preview).toContainText('Новые сотрудники: 3');
   await expect(preview).toContainText('Координатор проекта: Проектный офис → Проектирование');
   await expect(preview).toContainText('Руководитель проекта');
+  await expect(preview).toContainText('Не связаны автоматически: 1');
 
   const axe = await new AxeBuilder({ page }).include('section.card').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(axe.violations.filter((v) => ['serious', 'critical'].includes(v.impact)).map((v) => v.id)).toEqual([]);
 
   await preview.getByRole('button', { name: 'Применить изменения' }).click();
   await expect(page.locator('.toast-success').last()).toContainText('Оргструктура загружена: +3');
-  await expect(integrationsCard(page)).toContainText('Сотрудников связано с порталом: 26');
+  await expect(integrationsCard(page)).toContainText('Сотрудников связано с порталом: 25');
   await expect(page.locator('.users-table')).toContainText('Инженер сервиса');
 });
 

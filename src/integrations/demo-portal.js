@@ -3,10 +3,13 @@
 // настоящими HTTP-запросами — тем же кодом, что и к боевому порталу. Включается только в демо-режиме.
 // Данные синтетические и повторяют демо-датасет с несколькими отличиями, чтобы синхронизация
 // показала новых, переведённых и уволенных сотрудников.
+import { randomBytes } from 'node:crypto';
 import { USERS } from '../seed-data.js';
+import { DEMO_CLIENT_ID, DEMO_CLIENT_SECRET, DEMO_PORTAL_PREFIX } from './config.js';
 
 const PAGE = 50;
 const CALLS_KEPT = 100; // журнал вызовов демо-портала ограничен: портал открыт без входа
+const GRANTS_KEPT = 200; // выданные коды и токены входа — тоже
 
 const HEADS = Object.freeze({
   Закупки: 'Руководитель закупок',
@@ -97,6 +100,52 @@ export function createDemoPortal() {
     },
   };
 
+  // Вход через портал (OAuth): код живёт до первого обмена, токен — до перезапуска сервера.
+  const codes = new Map();
+  const tokens = new Map();
+  const grant = (map, value) => {
+    const key = randomBytes(16).toString('hex');
+    map.set(key, value);
+    if (map.size > GRANTS_KEPT) map.delete(map.keys().next().value);
+    return key;
+  };
+  const deptName = new Map(departments.map((d) => [Number(d.ID), d.NAME]));
+  const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+  // Страница входа портала. На настоящем портале сотрудник вводит свой логин и пароль Битрикс24,
+  // здесь — выбирает, кто «вошёл в портал». Система «Голос сотрудника» пароль не видит в обоих случаях.
+  function authorizePage(params) {
+    if (params.client_id !== DEMO_CLIENT_ID) return { status: 400, html: '<p>Неизвестное приложение (client_id)</p>' };
+    const user = users.find((u) => u.ID === String(params.user) && u.ACTIVE);
+    if (user) {
+      const code = grant(codes, user.ID);
+      const back = new URLSearchParams({
+        code, state: params.state ?? '', domain: 'demo-portal', member_id: 'demo', scope: 'user', server_domain: 'oauth.bitrix.info',
+      });
+      return { status: 302, location: `/api/auth/b24/callback?${back}` };
+    }
+    const link = (u) => `${DEMO_PORTAL_PREFIX}/b24/oauth/authorize/?${new URLSearchParams({ client_id: DEMO_CLIENT_ID, state: params.state ?? '', user: u.ID })}`;
+    const cards = users.filter((u) => u.ACTIVE).map((u) =>
+      `<a class="user-card" href="${escapeHtml(link(u))}"><b>${escapeHtml(u.NAME)}</b><span>${escapeHtml(deptName.get(u.UF_DEPARTMENT[0]) ?? '')}</span></a>`).join('');
+    return {
+      status: 200,
+      html: `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Демо-портал Битрикс24 — вход</title><link rel="stylesheet" href="/css/styles.css"></head>
+<body><main class="login demo-oauth"><h1>Демо-портал Битрикс24</h1>
+<p class="login-note">Имитация входа в облачный портал. На настоящем портале сотрудник входит своим логином и паролем Битрикс24,
+а «Голос сотрудника» получает только подтверждение, кто вошёл. Выберите сотрудника портала:</p>
+<div class="user-grid">${cards}</div></main></body></html>`,
+    };
+  }
+
+  function token(params) {
+    const userId = params.client_id === DEMO_CLIENT_ID && params.client_secret === DEMO_CLIENT_SECRET
+      && params.grant_type === 'authorization_code' ? codes.get(String(params.code)) : undefined;
+    codes.delete(String(params.code));
+    if (!userId) return { error: 'invalid_grant', error_description: 'Код недействителен или уже использован' };
+    return { access_token: grant(tokens, userId), userId };
+  }
+
   const record = (call) => {
     calls.push(call);
     if (calls.length > CALLS_KEPT) calls.splice(0, calls.length - CALLS_KEPT);
@@ -107,6 +156,31 @@ export function createDemoPortal() {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
       res.end(JSON.stringify(payload));
     };
+    if (path === '/b24/oauth/authorize/') {
+      const page = authorizePage(params);
+      if (page.location) {
+        res.writeHead(302, { location: page.location, 'cache-control': 'no-store' });
+        return res.end();
+      }
+      res.writeHead(page.status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      return res.end(page.html);
+    }
+    if (path === '/b24/oauth/token/') {
+      record({ system: 'b24', method: 'oauth.token' });
+      const result = token(params);
+      if (result.error) return send(400, result);
+      return send(200, {
+        access_token: result.access_token, expires_in: 3600, scope: 'user', user_id: Number(result.userId),
+        member_id: 'demo', domain: 'oauth.bitrix.info', status: 'L',
+        client_endpoint: `http://${req.headers.host}${DEMO_PORTAL_PREFIX}/b24/rest/`, server_endpoint: 'https://oauth.bitrix.info/rest/',
+      });
+    }
+    if (path === '/b24/rest/user.current.json') {
+      record({ system: 'b24', method: 'user.current' });
+      const user = users.find((u) => u.ID === tokens.get(String(params.auth)));
+      if (!user) return send(401, { error: 'invalid_token', error_description: 'The access token provided is invalid.' });
+      return send(200, { result: { ID: user.ID, NAME: user.NAME, LAST_NAME: user.LAST_NAME, ACTIVE: user.ACTIVE } });
+    }
     const b24Match = /^\/b24\/rest\/1\/demo\/([a-z.]+)\.json$/.exec(path);
     if (b24Match) {
       const method = b24[b24Match[1]];
