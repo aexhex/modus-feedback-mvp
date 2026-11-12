@@ -53,6 +53,10 @@ function orgPreview(p, applyBtn) {
       p.dismissBlocked && p.dismissed.length > 0
         ? h('p', { class: 'outbox-error' }, 'С портала пришло подозрительно мало сотрудников — отключение уволенных пропущено, проверьте права вебхука')
         : group('Уволены — будут отключены, их обращения перейдут резервным', p.dismissed, (name) => name),
+      p.notLinked?.length > 0 && h('div', { class: 'sync-group' },
+        h('b', null, `${t('Не связаны автоматически')}: ${p.notLinked.length}`),
+        h('p', { class: 't-sub' }, p.notLinked.join(', ')),
+        h('p', { class: 't-sub' }, 'Администраторы и одинаковые ФИО на портале по имени не связываются: связь открывает вход через Битрикс24. Администратора связывает переменная ADMIN_B24_ID.')),
       applyBtn,
     ]);
 }

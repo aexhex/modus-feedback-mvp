@@ -26,18 +26,53 @@ const ROLE_INFO = {
 const plural = (n) => (n % 10 === 1 && n % 100 !== 11 ? 'пользователь'
   : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'пользователя' : 'пользователей');
 
-function hero() {
+// Ответ сервера после возврата с портала Битрикс24 (/?login_error=...).
+const LOGIN_ERRORS = {
+  not_linked: 'Ваша учётная запись Битрикс24 не связана с сотрудником в системе. Обратитесь к администратору: он загружает оргструктуру из Битрикс24.',
+  inactive: 'Ваша учётная запись Битрикс24 отключена. Если это ошибка, обратитесь к администратору портала.',
+  denied: 'Вход через Битрикс24 отменён.',
+  state: 'Вход через Битрикс24 устарел или открыт в другом браузере. Попробуйте ещё раз.',
+  failed: 'Не удалось связаться с Битрикс24. Попробуйте ещё раз через минуту.',
+};
+
+function takeLoginError() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('login_error');
+  if (!code) return null;
+  history.replaceState(null, '', location.pathname + location.hash);
+  return LOGIN_ERRORS[code] ?? LOGIN_ERRORS.failed;
+}
+
+function b24Login(options, error) {
+  if (!options.b24) return null;
+  return h('div', { class: 'b24-login' },
+    error ? h('p', { class: 'login-error', role: 'alert' }, error) : null,
+    h('a', { class: 'btn btn-primary', href: '/api/auth/b24/start' }, 'Войти через Битрикс24'),
+    h('p', { class: 'muted' }, options.list
+      ? 'Как в рабочей установке: вход учётной записью портала. В демо — через встроенный демо-портал, после загрузки оргструктуры в «Настройках».'
+      : 'Вход учётной записью вашего портала Битрикс24. Пароль вводится на портале, система его не видит.'));
+}
+
+function hero(options) {
   return h('div', { class: 'login-hero' },
     h('div', null,
       h('h3', null, 'ГК «Модус Трейд» · хакатон'),
       h('h1', null, 'Голос сотрудника: ', h('em', null, 'ни одно предложение'), ' не теряется')),
-    h('p', { class: 'login-note' },
-      'Демо-вход без пароля: выберите роль, чтобы пройти сценарий от её лица. ',
-      'В промышленной версии вход — через корпоративную учётную запись (SSO Битрикс24). Все данные синтетические. ',
-      h('a', { href: '#/client' }, 'Форма отзыва для клиентов →')));
+    options.list
+      ? h('p', { class: 'login-note' },
+        'Демо-вход без пароля: выберите роль, чтобы пройти сценарий от её лица. Все данные синтетические. ',
+        h('a', { href: '#/client' }, 'Форма отзыва для клиентов →'))
+      : h('p', { class: 'login-note' }, h('a', { href: '#/client' }, 'Форма отзыва для клиентов →')));
 }
 
 export async function renderLogin(root, { onLogin }) {
+  const options = await get('/auth/options');
+  const error = takeLoginError();
+  const top = h('div', { class: 'login-top' }, langSwitch(), themeToggle());
+  if (!options.list) {
+    mount(root, h('div', { class: 'login' }, top, hero(options), b24Login(options, error ?? null)));
+    return;
+  }
   const { users, roles } = await get('/demo-users');
   const login = (id) => onLogin(id).catch((e) => toast(e.message, 'error'));
   const stage = h('div');
@@ -69,5 +104,5 @@ export async function renderLogin(root, { onLogin }) {
   }
 
   showRoles();
-  mount(root, h('div', { class: 'login' }, h('div', { class: 'login-top' }, langSwitch(), themeToggle()), hero(), stage));
+  mount(root, h('div', { class: 'login' }, top, hero(options), b24Login(options, error), stage));
 }

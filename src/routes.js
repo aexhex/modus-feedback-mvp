@@ -2,7 +2,7 @@
 import {
   TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, SESSION_COOKIE, SESSION_TTL_HOURS, TRANSITIONS,
 } from './config.js';
-import { forbidden } from './http.js';
+import { forbidden, notFound, parseCookies } from './http.js';
 import { canSeeAnalytics, canAdminister } from './access.js';
 import { login, logout } from './auth.js';
 import {
@@ -33,6 +33,10 @@ import {
 import { submitClientFeedback, listClientFeedback, markClientFeedback } from './client-feedback.js';
 import { buildHome } from './home.js';
 import { registerIntegrationRoutes } from './integrations/routes.js';
+import { IntegrationError } from './integrations/clients.js';
+import {
+  STATE_COOKIE, newState, stateCookie, stateMatches, authorizeUrl, b24UserByCode,
+} from './integrations/b24-sso.js';
 
 const TASK_WAIT_MS = 3000;
 const delay = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref(); });
@@ -42,6 +46,14 @@ const cookie = (token, maxAge, secure) =>
   `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
 
 const toList = (dict) => Object.entries(dict).map(([key, label]) => ({ key, label }));
+
+// Вход выбором из списка — в демо-режиме (через демо-портал) и пока вход через Битрикс24 не настроен.
+// С настоящим порталом список закрыт даже при DEMO_MODE=1: забытая переменная не должна открыть вход без пароля.
+const listLoginAllowed = (ctx) => ctx.integrations.config.sso.mode !== 'live';
+
+function requireListLogin(ctx) {
+  if (!listLoginAllowed(ctx)) throw forbidden('Вход — через Битрикс24');
+}
 
 function requireRole(check, user) {
   if (!check(user)) throw forbidden();
@@ -53,8 +65,16 @@ export function registerRoutes(router) {
   const MUTATE = { mutate: true };
 
   // --- Сессия (демо-вход) ---
-  add('GET', '/api/demo-users', ({ ctx }) => ({ users: listUsers(ctx.db), roles: ROLES }), PUBLIC);
+  add('GET', '/api/auth/options', ({ ctx }) => ({
+    b24: ctx.integrations.config.sso.mode !== 'off',
+    list: listLoginAllowed(ctx),
+  }), PUBLIC);
+  add('GET', '/api/demo-users', ({ ctx }) => {
+    requireListLogin(ctx);
+    return { users: listUsers(ctx.db), roles: ROLES };
+  }, PUBLIC);
   add('POST', '/api/session', ({ ctx, body, res }) => {
+    requireListLogin(ctx);
     const token = login(ctx.db, body.userId, ctx.now());
     res.setHeader('Set-Cookie', cookie(token, SESSION_TTL_HOURS * 3600, ctx.secureCookie));
     return { loggedIn: true };
@@ -64,7 +84,43 @@ export function registerRoutes(router) {
     res.setHeader('Set-Cookie', cookie('', 0, ctx.secureCookie));
     return { loggedIn: false };
   }, MUTATE);
-  add('GET', '/api/me', ({ user }) => ({ ...user, roleLabel: ROLES[user.role] }));
+
+  // --- Вход через Битрикс24 (OAuth) ---
+  const ssoConfig = (ctx) => {
+    const { sso } = ctx.integrations.config;
+    if (sso.mode === 'off') throw notFound('Вход через Битрикс24 не настроен');
+    return sso;
+  };
+  add('GET', '/api/auth/b24/start', ({ ctx, redirect }) => {
+    const sso = ssoConfig(ctx);
+    const state = newState();
+    redirect(authorizeUrl(sso, ctx.integrations.endpoints().sso, state), [stateCookie(state, ctx.secureCookie)]);
+  }, { ...PUBLIC, mutate: true });
+  add('GET', '/api/auth/b24/callback', async ({ ctx, req, query, redirect }) => {
+    const sso = ssoConfig(ctx);
+    const back = (error, cookies = []) =>
+      redirect(error ? `/?login_error=${error}` : '/', [stateCookie('', ctx.secureCookie), ...cookies]);
+    // state защищает от подстановки чужого кода: вход завершает тот браузер, который его начал.
+    if (!stateMatches(parseCookies(req.headers.cookie)[STATE_COOKIE], query.state)) return back('state');
+    if (query.error || !query.code) return back('denied');
+    let portalUser;
+    try {
+      portalUser = await b24UserByCode(sso, ctx.integrations.endpoints().sso, String(query.code));
+    } catch (error) {
+      if (!(error instanceof IntegrationError)) throw error;
+      ctx.logger.error('[b24 sso]', error.message);
+      return back('failed');
+    }
+    // Уволенный на портале не входит сразу, не дожидаясь ежедневной проверки оргструктуры.
+    if (!portalUser.active) return back('inactive');
+    const user = ctx.db.prepare('SELECT id FROM users WHERE b24_id = ? AND is_active = 1').get(portalUser.id);
+    if (!user) return back('not_linked');
+    const token = login(ctx.db, user.id, ctx.now());
+    return back(null, [cookie(token, SESSION_TTL_HOURS * 3600, ctx.secureCookie)]);
+  }, { ...PUBLIC, mutate: true });
+
+  // canSwitch — можно ли вернуться к выбору роли (демо); при входе только через Битрикс24 — просто «Выйти».
+  add('GET', '/api/me', ({ ctx, user }) => ({ ...user, roleLabel: ROLES[user.role], canSwitch: listLoginAllowed(ctx) }));
 
   // --- Справочники ---
   add('GET', '/api/meta', ({ ctx }) => ({

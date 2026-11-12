@@ -87,7 +87,7 @@ export function createApp({
 }) {
   const db = openDatabase(dbPath);
   const seeded = seed && seedIfEmpty(db, now(), uploadsDir);
-  if (!seed) bootstrapAdmin(db, process.env.ADMIN_NAME);
+  if (!seed) bootstrapAdmin(db, process.env.ADMIN_NAME, process.env.ADMIN_B24_ID);
   seedTemplates(db);
   escalateOverdue(db, now());
   if (seeded) markOutboxHistory(db);
@@ -97,7 +97,7 @@ export function createApp({
   const endpoints = () => resolveEndpoints(config, `http://127.0.0.1:${server.address().port}`);
   const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger });
   const checkTasks = (options) => pollTasks(db, endpoints().b24, now, options);
-  const ctx = { db, uploadsDir, now, demoMode, secureCookie, integrations: { config, endpoints, delivery, checkTasks } };
+  const ctx = { db, uploadsDir, now, demoMode, secureCookie, logger, integrations: { config, endpoints, delivery, checkTasks } };
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);
@@ -129,6 +129,10 @@ export function createApp({
       status: (code) => { statusCode = code; },
       setMeta: (value) => { meta = value; },
       sendRaw: (buf, headers) => { raw = true; sendFile(res, 200, buf, headers); },
+      redirect: (location, cookies = []) => {
+        raw = true;
+        sendFile(res, 302, '', { Location: location, 'Set-Cookie': cookies, 'Cache-Control': 'no-store' });
+      },
     });
     // Изменения могли добавить вызовы Битрикс24 в журнал — отправка идёт в фоне, ответ её не ждёт.
     if (hasBody) delivery.kick();
@@ -136,7 +140,8 @@ export function createApp({
   }
 
   async function handleDemoPortal(req, res, url) {
-    const params = req.method === 'POST' ? await readJson(req, LIMITS.jsonBodyBytes) : {};
+    const body = req.method === 'POST' ? await readJson(req, LIMITS.jsonBodyBytes) : {};
+    const params = { ...Object.fromEntries(url.searchParams), ...body };
     demoPortal.handle(req, res, url.pathname.slice(DEMO_PORTAL_PREFIX.length), params);
   }
 
