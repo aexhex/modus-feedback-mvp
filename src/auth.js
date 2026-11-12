@@ -54,7 +54,7 @@ export function logout(db, token) {
  * @returns {{ embedded: boolean } | null} продлённая сессия — нужно обновить cookie
  */
 export function renewSession(db, token, nowIso) {
-  const row = db.prepare(`UPDATE sessions SET created_at = ? WHERE token = ? AND created_at < ?
+  const row = db.prepare(`UPDATE sessions SET created_at = ?, issued_at = COALESCE(issued_at, created_at) WHERE token = ? AND created_at < ?
       AND COALESCE(issued_at, created_at) > ? RETURNING embedded`)
     .get(nowIso, token, addHours(nowIso, -SESSION_TTL_HOURS / 2), addHours(nowIso, -24 * SESSION_MAX_DAYS));
   return row ? { embedded: row.embedded === 1 } : null;
