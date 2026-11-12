@@ -51,14 +51,14 @@ test('клиенты из 1С УТ: загрузка справочника и �
   await page.getByLabel('Категория').selectOption({ label: 'Договорная работа' });
   await page.getByLabel('Кратко, о чём обращение').fill('Клиент ждёт подписанный договор больше недели');
   await page.getByLabel('Описание').fill('Договор с клиентом согласован, но подписанный экземпляр не отправлен уже больше недели.');
-  await page.getByRole('combobox', { name: /^Клиент Необязательно/ }).selectOption({ label: 'ТОО «Альфа Монтаж» · 060140001234' });
+  await page.getByRole('combobox', { name: /^Клиент Необязательно/ }).selectOption({ label: 'ТОО «Демо-клиент Альфа» · 000000000001' });
   // Черновик сохраняет выбранного клиента и после перезагрузки страницы.
   await page.waitForTimeout(600);
   await page.reload();
   await expect(page.getByRole('combobox', { name: /^Клиент Необязательно/ })).toHaveValue(/\d+/);
   await page.getByRole('button', { name: 'Отправить обращение' }).click();
   await expect(page.locator('.facts')).toContainText('Клиент (1С УТ)');
-  await expect(page.locator('.facts')).toContainText('ТОО «Альфа Монтаж»');
+  await expect(page.locator('.facts')).toContainText('ТОО «Демо-клиент Альфа»');
 });
 
 test('задача из обращения: завершение на демо-портале видно в карточке', async ({ page }) => {
@@ -83,8 +83,8 @@ test('аналитика: клиенты из 1С с наибольшим чис
   await loginAs(page, 'Директор по развитию');
   await page.goto('/#/analytics');
   const card = page.locator('section.card', { hasText: 'Клиенты с наибольшим числом обращений' });
-  await expect(card.getByRole('link', { name: 'ТОО «Альфа Монтаж»' })).toBeVisible();
-  await card.getByRole('link', { name: 'ТОО «Альфа Монтаж»' }).click();
+  await expect(card.getByRole('link', { name: 'ТОО «Демо-клиент Альфа»' })).toBeVisible();
+  await card.getByRole('link', { name: 'ТОО «Демо-клиент Альфа»' }).click();
   await expect(page.getByText('Отбор по клиенту из 1С')).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(1);
 });
