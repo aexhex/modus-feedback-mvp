@@ -9,6 +9,7 @@ import { findSimilar } from './similarity.js';
 import { getReport, canReport } from './reports.js';
 import { ticketVoting } from './votes.js';
 import { taskInfo } from './integrations/b24-task-status.js';
+import { tzOffsetMs } from './settings.js';
 
 export const BASE_SELECT = `
 SELECT t.*, c.name AS category_name, a.name AS author_name, s.name AS assignee_name,
@@ -102,12 +103,11 @@ const FILTERS = [
 ];
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const MSK_OFFSET_MS = 3 * 3600 * 1000;
 
-function dayStartIso(date, plusDays) {
+function dayStartIso(date, plusDays, offsetMs) {
   const ms = DATE_RE.test(String(date)) ? Date.parse(`${date}T00:00:00.000Z`) : Number.NaN;
   if (Number.isNaN(ms)) throw badRequest('Дата указывается в формате ГГГГ-ММ-ДД');
-  return new Date(ms - MSK_OFFSET_MS + plusDays * 24 * 3600 * 1000).toISOString();
+  return new Date(ms - offsetMs + plusDays * 24 * 3600 * 1000).toISOString();
 }
 
 function clampInt(value, fallback, min, max) {
@@ -115,7 +115,7 @@ function clampInt(value, fallback, min, max) {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
-function buildWhere(user, query, nowIso) {
+function buildWhere(user, query, nowIso, offsetMs) {
   // Лента идей — опубликованные обращения, одинаково для всех ролей.
   const scope = query.scope === 'feed' ? { sql: 't.is_public = 1', params: [] } : listScope(user);
   const where = [scope.sql];
@@ -144,14 +144,14 @@ function buildWhere(user, query, nowIso) {
   }
   if (query.open === '1') where.push(`t.status NOT IN (${FINAL_STATUSES.map((s) => `'${s}'`).join(',')})`);
   if (query.notClosed === '1') where.push("t.status != 'closed'");
-  // Период подачи: границы суток по московскому времени.
+  // Период подачи: границы суток по времени компании.
   if (query.from) {
     where.push('t.created_at >= ?');
-    params.push(dayStartIso(query.from, 0));
+    params.push(dayStartIso(query.from, 0, offsetMs));
   }
   if (query.to) {
     where.push('t.created_at < ?');
-    params.push(dayStartIso(query.to, 1));
+    params.push(dayStartIso(query.to, 1, offsetMs));
   }
   return { sql: where.join(' AND '), params };
 }
@@ -161,7 +161,7 @@ function buildWhere(user, query, nowIso) {
  * @returns {{ items: object[], total: number, page: number, limit: number }}
  */
 export function listTickets(db, user, query, nowIso, { maxLimit = PAGE_SIZE_MAX } = {}) {
-  const where = buildWhere(user, query, nowIso);
+  const where = buildWhere(user, query, nowIso, tzOffsetMs(db));
   const limit = clampInt(query.limit, Math.min(PAGE_SIZE_DEFAULT, maxLimit), 1, maxLimit);
   const page = clampInt(query.page, 1, 1, Number.MAX_SAFE_INTEGER);
   const { total } = db.prepare(`SELECT COUNT(*) AS total FROM tickets t WHERE ${where.sql}`).get(...where.params);

@@ -1123,4 +1123,13 @@ export default {
   'с': 'from',
   'сначала укажите почту': 'enter an email first',
   'сутки целиком': 'the whole day',
+  'Казахстан (UTC+5)': 'Kazakhstan (UTC+5)',
+  'Москва (UTC+3)': 'Moscow (UTC+3)',
+  'По нему считаются рабочие дни и часы, недели в аналитике и границы суток в отчётах.': 'Working days and hours, weeks in analytics and day boundaries in reports are counted in this time zone.',
+  'Сохранить пояс': 'Save time zone',
+  'Часовой пояс изменён': 'Time zone changed',
+  'Часовой пояс компании': 'Company time zone',
+  'Часовой пояс сохранён — сроки новых обращений считаются по нему': 'Time zone saved — deadlines for new requests are counted in it',
+  'Часовой пояс': 'Time zone',
+  'Часовой пояс: смещение от UTC — целое число часов от −12 до +14': 'Time zone: UTC offset — whole hours from −12 to +14',
 };

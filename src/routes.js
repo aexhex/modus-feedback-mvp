@@ -17,7 +17,9 @@ import { listCategories, listUsers, createCategory, updateCategory, createUser, 
 import { uploadAttachment, readAttachment } from './attachments.js';
 import { listNotifications, markAllRead, listOutbox } from './notifications.js';
 import { setWatching, inviteWatcher, createB24Task } from './collab.js';
-import { getSlaDays, setSla, listHolidays, setHolidays, listCalendar, replaceCalendarYear, getWorkHours, setWorkHours } from './settings.js';
+import {
+  getSlaDays, setSla, listHolidays, setHolidays, listCalendar, replaceCalendarYear, getWorkHours, setWorkHours, getTimezone, setTimezone,
+} from './settings.js';
 import { listTargets, setTargets } from './targets.js';
 import { listSolutions } from './solutions.js';
 import { castVote, voteSummary } from './votes.js';
@@ -382,6 +384,12 @@ export function registerRoutes(router) {
     return listHolidays(ctx.db);
   }, MUTATE);
 
+  admin('GET', '/api/admin/timezone', ({ ctx }) => ({ offset: getTimezone(ctx.db) }));
+  admin('PATCH', '/api/admin/timezone', ({ ctx, body, log }) => {
+    const offset = setTimezone(ctx.db, body);
+    log('Часовой пояс изменён', `UTC${offset >= 0 ? '+' : ''}${offset}`);
+    return { offset };
+  }, MUTATE);
   admin('GET', '/api/admin/work-hours', ({ ctx }) => getWorkHours(ctx.db));
   admin('PATCH', '/api/admin/work-hours', ({ ctx, body, log }) => {
     const hours = setWorkHours(ctx.db, body);

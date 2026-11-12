@@ -3,14 +3,14 @@
 import { buildReport, buildAnalytics } from './analytics.js';
 import { npsOf } from './client-feedback.js';
 import { logOutbox } from './notifications.js';
+import { tzOffsetMs } from './settings.js';
 
 const DAY_MS = 24 * 3600 * 1000;
-const TZ_OFFSET_MS = 3 * 3600 * 1000;
 const TOP = 3;
 
-// Календарная дата по московскому времени, сдвинутая на days дней.
-const localDate = (nowIso, days) =>
-  new Date(new Date(nowIso).getTime() + TZ_OFFSET_MS + days * DAY_MS).toISOString().slice(0, 10);
+// Календарная дата по времени компании, сдвинутая на days дней.
+const localDate = (nowIso, days, offsetMs) =>
+  new Date(new Date(nowIso).getTime() + offsetMs + days * DAY_MS).toISOString().slice(0, 10);
 
 const ruDate = (date) => date.split('-').reverse().join('.');
 const signed = (n) => (n > 0 ? `+${n}` : String(n));
@@ -29,8 +29,9 @@ function topVoted(db) {
 }
 
 function clientWeek(db, fromDate, toDate) {
-  const from = new Date(Date.parse(`${fromDate}T00:00:00Z`) - TZ_OFFSET_MS).toISOString();
-  const to = new Date(Date.parse(`${toDate}T00:00:00Z`) - TZ_OFFSET_MS + DAY_MS).toISOString();
+  const offsetMs = tzOffsetMs(db);
+  const from = new Date(Date.parse(`${fromDate}T00:00:00Z`) - offsetMs).toISOString();
+  const to = new Date(Date.parse(`${toDate}T00:00:00Z`) - offsetMs + DAY_MS).toISOString();
   const scores = db
     .prepare('SELECT score FROM client_feedback WHERE created_at >= ? AND created_at < ?')
     .all(from, to)
@@ -56,10 +57,11 @@ function digestText(d) {
 }
 
 export function buildDigest(db, nowIso) {
-  const to = localDate(nowIso, 0);
-  const from = localDate(nowIso, -6);
+  const offsetMs = tzOffsetMs(db);
+  const to = localDate(nowIso, 0, offsetMs);
+  const from = localDate(nowIso, -6, offsetMs);
   const current = buildReport(db, { from, to }, nowIso);
-  const previous = buildReport(db, { from: localDate(nowIso, -13), to: localDate(nowIso, -7) }, nowIso);
+  const previous = buildReport(db, { from: localDate(nowIso, -13, offsetMs), to: localDate(nowIso, -7, offsetMs) }, nowIso);
   const digest = {
     from,
     to,
