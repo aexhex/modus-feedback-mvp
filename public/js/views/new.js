@@ -1,5 +1,6 @@
 import { h, mount, toast, debounce, field, options, fileToBase64, filePicker, compressPhoto } from '../dom.js';
 import { get, post, qs } from '../api.js';
+import { t } from '../i18n.js';
 
 const TYPE_HINTS = {
   problem: 'Что-то мешает работать: процесс, данные, взаимодействие',
@@ -90,6 +91,14 @@ export function renderNew(el, { me, meta, go, rerender }) {
   const solutionIn = h('textarea', { rows: 3, maxlength: 3000, placeholder: 'Если есть идея решения — опишите её (необязательно)' });
   const categoryIn = h('select', { required: true }, options(meta.categories, { valueKey: 'id', labelKey: 'name', empty: 'Выберите категорию' }));
   const priorityIn = h('select', { value: 'medium' }, options(meta.priorities));
+  // Клиент из справочника 1С УТ — поле появляется, когда справочник загружен администратором.
+  // Названия клиентов — данные 1С, их не переводим.
+  const clientIn = h('select', { 'data-no-i18n': '' }, h('option', { value: '' }, t('— не связано с клиентом —')));
+  if (meta.hasCounterparties) {
+    get('/counterparties')
+      .then((list) => clientIn.append(...list.map((c) => h('option', { value: String(c.id) }, c.inn ? `${c.name} · ${c.inn}` : c.name))))
+      .catch((err) => toast(err.message, 'error'));
+  }
   const anonIn = h('input', { type: 'checkbox' });
   const publicIn = h('input', { type: 'checkbox' });
   const files = filePicker({ multiple: true });
@@ -130,6 +139,7 @@ export function renderNew(el, { me, meta, go, rerender }) {
         priority: priorityIn.value,
         isAnonymous: anonIn.checked,
         isPublic: publicIn.checked,
+        counterpartyId: clientIn.value ? Number(clientIn.value) : null,
       });
       submitted = true;
       clearDraft();
@@ -199,6 +209,7 @@ export function renderNew(el, { me, meta, go, rerender }) {
         field('Кратко, о чём обращение', titleIn),
         field('Описание', descIn),
         solutionField,
+        meta.hasCounterparties && field('Клиент', clientIn, 'Необязательно. Если проблема связана с конкретным клиентом — выберите его из справочника 1С УТ'),
         field('Насколько срочно', priorityIn, `Срок первого ответа в рабочих днях: ${meta.sla.map((s) => `${s.label.toLowerCase()} — ${s.firstResponseDays}`).join(', ')}`),
         h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Материалы'),
           h('div', { class: 'row' }, camera.el, files.el),

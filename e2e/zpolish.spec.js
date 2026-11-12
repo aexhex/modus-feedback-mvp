@@ -50,12 +50,12 @@ test('фото с камеры прикрепляется к новому обр
   await expect(page.locator('.attach')).toContainText(/photo-.*\.jpg/);
 });
 
-test('сводка недели: текст и рассылка (имитация)', async ({ page }) => {
+test('сводка недели: текст и рассылка в Битрикс24', async ({ page }) => {
   await loginAs(page, 'Директор по развитию');
   await page.locator('.nav').getByRole('link', { name: 'Сводка недели' }).click();
   await expect(page.getByLabel('Текст сводки')).toHaveValue(/^Сводка «Голос сотрудника»/);
-  await page.getByRole('button', { name: 'Разослать руководителям (имитация)' }).click();
-  await expect(page.locator('.toast-success').last()).toContainText('Сводка отправлена руководителям: 2');
+  await page.getByRole('button', { name: 'Разослать руководителям в Битрикс24' }).click();
+  await expect(page.locator('.toast-success').last()).toContainText('Сводка поставлена в отправку в Битрикс24, получателей: 2');
 });
 
 test('импорт пользователей из CSV', async ({ page }) => {

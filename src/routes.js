@@ -32,6 +32,7 @@ import {
 } from './surveys.js';
 import { submitClientFeedback, listClientFeedback, markClientFeedback } from './client-feedback.js';
 import { buildHome } from './home.js';
+import { registerIntegrationRoutes } from './integrations/routes.js';
 
 const cookie = (token, maxAge) =>
   `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
@@ -74,6 +75,8 @@ export function registerRoutes(router) {
     templates: listTemplates(ctx.db),
     sla: getSlaDays(ctx.db),
     demoMode: ctx.demoMode,
+    b24Mode: ctx.integrations.config.b24.mode,
+    hasCounterparties: ctx.db.prepare('SELECT 1 FROM counterparties WHERE is_active = 1 LIMIT 1').get() !== undefined,
   }));
   add('GET', '/api/home', ({ ctx, user }) => buildHome(ctx.db, user, ctx.now()));
 
@@ -121,7 +124,10 @@ export function registerRoutes(router) {
     }
   }, MUTATE);
   action('invite', inviteWatcher);
-  action('b24-task', createB24Task);
+  add('POST', '/api/tickets/:id/b24-task', ({ ctx, user, params, body }) => {
+    createB24Task(ctx.db, user, params.id, body, ctx.now(), { live: ctx.integrations.config.b24.mode !== 'off' });
+    return getTicketDetail(ctx.db, user, params.id, ctx.now());
+  }, MUTATE);
   action('report', saveReport);
   action('publish', setPublic);
   add('PATCH', '/api/tickets/:id', ({ ctx, user, params, body }) => {
@@ -281,4 +287,5 @@ export function registerRoutes(router) {
   }, MUTATE);
   admin('GET', '/api/admin/outbox', ({ ctx }) => listOutbox(ctx.db));
   admin('GET', '/api/admin/audit', ({ ctx }) => listAudit(ctx.db));
+  registerIntegrationRoutes({ add, admin, PUBLIC, MUTATE });
 }
