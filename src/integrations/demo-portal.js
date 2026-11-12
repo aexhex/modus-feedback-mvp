@@ -62,6 +62,7 @@ export function createDemoPortal() {
   const calls = [];
   let nextTaskId = 2400;
   let nextMessageId = 0;
+  const tasks = new Map(); // номер задачи → статус (коды REST Битрикс24)
 
   const page = (list, start) => {
     const from = Number(start) || 0;
@@ -81,7 +82,16 @@ export function createDemoPortal() {
     'tasks.task.add': (p) => {
       if (!p.fields?.TITLE) return { error: 'ERROR_CORE', error_description: 'Не указано название задачи' };
       nextTaskId += 1;
+      tasks.set(String(nextTaskId), '2');
       return { result: { task: { id: String(nextTaskId), title: p.fields.TITLE } } };
+    },
+    'tasks.task.get': (p) => (tasks.has(String(p.taskId))
+      ? { result: { task: { id: String(p.taskId), status: tasks.get(String(p.taskId)) } } }
+      : { error: 'ERROR_CORE', error_description: 'Задача не найдена или доступ запрещён' }),
+    'tasks.task.complete': (p) => {
+      if (!tasks.has(String(p.taskId))) return { error: 'ERROR_CORE', error_description: 'Задача не найдена или доступ запрещён' };
+      tasks.set(String(p.taskId), '5');
+      return { result: { task: { id: String(p.taskId), status: '5' } } };
     },
   };
 

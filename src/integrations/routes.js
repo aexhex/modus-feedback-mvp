@@ -1,11 +1,14 @@
 // API интеграций с Битрикс24 и 1С УТ. Управление — только администратору; выгрузку для 1С
 // забирает сама 1С по токену (без сессии пользователя).
-import { HttpError, badRequest, notFound } from '../http.js';
+import { HttpError, badRequest, notFound, forbidden } from '../http.js';
 import { IntegrationError } from './clients.js';
 import { describeConfig } from './config.js';
 import { previewOrgSync, applyOrgSync } from './b24-org.js';
 import { syncCounterparties, listCounterparties, counterpartiesCount, checkExportToken, exportForOnec } from './onec.js';
 import { retryOutbox, outboxStats } from './delivery.js';
+import { b24Call } from './clients.js';
+import { canProcess } from '../access.js';
+import { getVisibleTicketRow, getTicketDetail } from '../tickets-query.js';
 
 // Ошибка внешней системы — не ошибка нашего сервера: 502 с понятным текстом.
 async function external(fn) {
@@ -51,6 +54,26 @@ export function registerIntegrationRoutes({ add, admin, PUBLIC, MUTATE }) {
     const result = await external(() => syncCounterparties(ctx.db, onecConnection(ctx), ctx.now()));
     log('Контрагенты загружены из 1С', `действующих: ${result.total}, новых: ${result.added}, снято: ${result.deactivated}`);
     return result;
+  }, MUTATE);
+
+  admin('POST', '/api/admin/integrations/b24/tasks-check', ({ ctx }) => {
+    b24Url(ctx);
+    return external(() => ctx.integrations.checkTasks());
+  }, MUTATE);
+
+  // Только демо-режим: «исполнитель» завершает задачу на демо-портале, чтобы показать замкнутый круг.
+  // На настоящем портале задачу завершает сам исполнитель в Битрикс24.
+  add('POST', '/api/tickets/:id/b24-task/demo-complete', async ({ ctx, user, params }) => {
+    if (ctx.integrations.config.b24.mode !== 'demo') throw forbidden('Доступно только с демо-порталом');
+    const row = getVisibleTicketRow(ctx.db, user, params.id);
+    if (!canProcess(user, row)) throw forbidden();
+    const task = ctx.db.prepare('SELECT task_id FROM b24_tasks WHERE ticket_id = ?').get(row.id);
+    if (!task) throw badRequest('Задача в Битрикс24 ещё не создана');
+    await external(async () => {
+      await b24Call(ctx.integrations.endpoints().b24, 'tasks.task.complete', { taskId: task.task_id });
+      await ctx.integrations.checkTasks({ ticketId: row.id });
+    });
+    return getTicketDetail(ctx.db, user, row.id, ctx.now());
   }, MUTATE);
 
   admin('POST', '/api/admin/outbox/:id/retry', ({ ctx, params, log }) => {

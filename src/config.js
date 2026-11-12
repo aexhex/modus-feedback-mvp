@@ -133,7 +133,9 @@ export const LIMITS = Object.freeze({
   solutionMax: 3000,
   commentMax: 3000,
   exportMax: 5000,
-  mutationsPerMinute: 60,
+  // Изменений в минуту с одного пользователя (или адреса — для входа). Переопределяется
+  // MUTATIONS_PER_MINUTE: сквозные тесты входят десятки раз в минуту с одного адреса.
+  mutationsPerMinute: Number.parseInt(process.env.MUTATIONS_PER_MINUTE, 10) > 0 ? Number.parseInt(process.env.MUTATIONS_PER_MINUTE, 10) : 60,
   publicPostsPerMinute: 5,
   clientFeedbackPerDay: 300,
   rateLimiterKeysMax: 5000,

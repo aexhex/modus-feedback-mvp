@@ -12,6 +12,7 @@ import { escalateOverdue } from './escalation.js';
 import { readIntegrationConfig, resolveEndpoints, DEMO_PORTAL_PREFIX } from './integrations/config.js';
 import { createDelivery, markOutboxHistory } from './integrations/delivery.js';
 import { createDemoPortal } from './integrations/demo-portal.js';
+import { pollTasks } from './integrations/b24-tasks.js';
 import {
   HttpError, createRouter, readJson, ok, fail, sendFile, parseCookies,
 } from './http.js';
@@ -58,6 +59,8 @@ async function serveStatic(publicDir, pathname, res) {
 
 // Как часто повторять неудавшуюся отправку в Битрикс24.
 const DELIVERY_INTERVAL_MS = 15_000;
+// Как часто проверять статусы задач в Битрикс24 (облачный портал не может сообщить о них сам).
+const TASK_POLL_INTERVAL_MS = 5 * 60_000;
 
 /**
  * @param {{ dbPath: string, uploadsDir: string, publicDir: string, now?: () => string, seed?: boolean, logger?: Console,
@@ -82,7 +85,8 @@ export function createApp({
   let server;
   const endpoints = () => resolveEndpoints(config, `http://127.0.0.1:${server.address().port}`);
   const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger });
-  const ctx = { db, uploadsDir, now, demoMode, integrations: { config, endpoints, delivery } };
+  const checkTasks = (options) => pollTasks(db, endpoints().b24, now, options);
+  const ctx = { db, uploadsDir, now, demoMode, integrations: { config, endpoints, delivery, checkTasks } };
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);
@@ -155,7 +159,9 @@ export function createApp({
   if (config.b24.mode !== 'off') {
     const retry = setInterval(() => delivery.kick(), DELIVERY_INTERVAL_MS);
     retry.unref();
-    server.on('close', () => clearInterval(retry));
+    const taskPoll = setInterval(() => checkTasks().catch((error) => logger.error('[b24 tasks]', error)), TASK_POLL_INTERVAL_MS);
+    taskPoll.unref();
+    server.on('close', () => { clearInterval(retry); clearInterval(taskPoll); });
     server.on('listening', () => delivery.kick());
   } else {
     delivery.kick();
