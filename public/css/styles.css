@@ -334,7 +334,7 @@ textarea { resize: vertical; min-height: 96px; }
   --chip-bg: #2b2c31;
   --line: #2a2b2f;
   --line-strong: #3f4147;
-  --brand: #2f6fd6;
+  --brand: #d42020;
   --side-bg: #0b0b0c;
   --signal: #d42020;
   --focus: #5b9cf2;
@@ -353,7 +353,7 @@ textarea { resize: vertical; min-height: 96px; }
   --heading: #ffffff;
   --signal-text: #ff6b6b;
 }
-:root[data-theme="dark"] .btn-primary:hover { background: #3f80e6; }
+:root[data-theme="dark"] .btn-primary:hover { background: #b71c1c; border-color: #b71c1c; }
 :root[data-theme="dark"] .toast { background: #2b2c31; }
 :root[data-theme="dark"] .side { color: #e4e5e7; }
 :root[data-theme="dark"] .brand-sub { color: #9da1a8; }
@@ -556,7 +556,7 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 .role-card-lead { color: var(--ink-2); font-weight: 600; }
 .role-card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
 .role-card-foot { margin-top: auto; font-weight: 650; color: var(--brand); }
-:root[data-theme="dark"] .role-card-foot { color: var(--st-new); }
+:root[data-theme="dark"] .role-card-foot { color: var(--signal-text); }
 .login-step-head { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 
 /* ---------- Карточка обращения ---------- */
@@ -706,7 +706,6 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 .lang-btn { border: 0; background: none; color: var(--muted); font: 700 12px/1 var(--font-text); letter-spacing: .04em; padding: 7px 10px; border-radius: 999px; cursor: pointer; min-height: 30px; }
 .lang-btn:hover { color: var(--text); }
 .lang-btn.active { background: var(--brand); color: #fff; }
-:root[data-theme="dark"] .lang-btn.active { background: var(--signal); }
 .lang-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .login-top { gap: 10px; align-items: center; }
 
