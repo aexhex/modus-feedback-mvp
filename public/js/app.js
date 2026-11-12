@@ -1,7 +1,7 @@
 // Оболочка SPA: сессия, навигация по ролям, хэш-роутер, колокольчик уведомлений.
 import { locale, langSwitch } from './i18n.js';
 import { h, mount, toast, icon, themeToggle } from './dom.js';
-import { get, post, del } from './api.js';
+import { get, getInBackground, post, del } from './api.js';
 import { renderLogin } from './views/login.js';
 import { renderList } from './views/list.js';
 import { renderNew } from './views/new.js';
@@ -118,7 +118,7 @@ async function refreshBell() {
   const el = document.getElementById('bell-count');
   if (!el || !session.me) return;
   try {
-    const { unread } = await get('/notifications');
+    const { unread } = await getInBackground('/notifications');
     el.textContent = String(unread);
     el.hidden = unread === 0;
   } catch {
