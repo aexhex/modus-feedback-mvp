@@ -97,6 +97,39 @@ describe('вход через демо-портал Битрикс24', () => {
     assert.equal(b.jar.get('b24_state'), 'b24_state=', 'state одноразовый: cookie сброшена');
   });
 
+  it('администратор связывает вручную того, кого система не связала сама', async () => {
+    const admin = await app.as('Администратор системы');
+    const preview = (await admin.post('/api/admin/integrations/b24/org-preview')).json.data;
+    const entry = preview.notLinked.find((u) => u.name === 'Администратор системы');
+    const [candidate] = entry.candidates;
+    // Чужие права и ошибки — до связывания.
+    const employee = await app.as('Сотрудник офиса');
+    assert.equal((await employee.post('/api/admin/integrations/b24/link', { userId: entry.userId, b24Id: candidate.b24Id })).status, 403);
+    const taken = b24IdOf(app, 'Сотрудник офиса');
+    assert.equal((await admin.post('/api/admin/integrations/b24/link', { userId: entry.userId, b24Id: taken })).status, 409);
+    assert.equal((await admin.post('/api/admin/integrations/b24/link', { userId: entry.userId, b24Id: 99999 })).status, 404);
+    assert.equal((await admin.post('/api/admin/integrations/b24/link', { userId: entry.userId, b24Id: 'abc' })).status, 400);
+
+    const linked = await admin.post('/api/admin/integrations/b24/link', { userId: entry.userId, b24Id: candidate.b24Id });
+    assert.equal(linked.status, 200);
+    assert.equal(b24IdOf(app, 'Администратор системы'), candidate.b24Id);
+    assert.equal((await admin.post('/api/admin/integrations/b24/link', { userId: entry.userId, b24Id: candidate.b24Id })).status, 409, 'повторно не связывается');
+    assert.ok((await admin.get('/api/admin/audit')).json.data.some((a) => a.action === 'Сотрудник связан с Битрикс24 вручную'));
+    const { callback } = await loginViaPortal(app, candidate.b24Id);
+    assert.equal(callback.headers.get('location'), '/', 'после связывания администратор входит через портал');
+  });
+
+  it('уволенного на портале связать нельзя', async () => {
+    const admin = await app.as('Администратор системы');
+    const unlinked = app.db.prepare("INSERT INTO users (name, role, department) VALUES ('Новый сотрудник', 'employee', 'IT')").run().lastInsertRowid;
+    // «Руководитель проекта» уволен на демо-портале: снимаем связь в системе и пробуем связать заново.
+    const dismissedId = b24IdOf(app, 'Руководитель проекта');
+    assert.ok(dismissedId);
+    app.db.prepare("UPDATE users SET b24_id = NULL WHERE name = 'Руководитель проекта'").run();
+    const res = await admin.post('/api/admin/integrations/b24/link', { userId: Number(unlinked), b24Id: dismissedId });
+    assert.equal(res.status, 404);
+  });
+
   it('страница входа портала показывает только действующих сотрудников', async () => {
     const b = browser(app.base);
     const start = await b.go('/api/auth/b24/start');
@@ -263,7 +296,8 @@ describe('связывание с порталом по ФИО', () => {
     db.prepare("INSERT INTO users (name, role, department) VALUES ('Иван Петров', 'employee', 'IT'), ('Админ', 'admin', 'IT'), ('Пётр Сидоров', 'employee', 'IT')").run();
     const p = await previewOrgSync(db, url);
     assert.deepEqual(p.linked, ['Пётр Сидоров']);
-    assert.deepEqual(p.notLinked, ['Иван Петров', 'Админ']);
+    assert.deepEqual(p.notLinked.map((u) => u.name), ['Иван Петров', 'Админ']);
+    assert.deepEqual(p.notLinked[0].candidates.map((c) => c.b24Id), [201, 202], 'оба однофамильца — кандидаты');
     assert.deepEqual(p.created, [], 'не связанные не дублируются новыми учётными записями');
   });
 });

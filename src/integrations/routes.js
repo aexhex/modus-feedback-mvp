@@ -3,7 +3,7 @@
 import { HttpError, badRequest, notFound, forbidden } from '../http.js';
 import { IntegrationError } from './clients.js';
 import { describeConfig } from './config.js';
-import { previewOrgSync, applyOrgSync } from './b24-org.js';
+import { previewOrgSync, applyOrgSync, linkUser } from './b24-org.js';
 import { syncCounterparties, listCounterparties, counterpartiesCount, checkExportToken, exportForOnec } from './onec.js';
 import { retryOutbox, outboxStats } from './delivery.js';
 import { b24Call } from './clients.js';
@@ -47,6 +47,12 @@ export function registerIntegrationRoutes({ add, admin, PUBLIC, MUTATE }) {
     const result = await external(() => applyOrgSync(ctx.db, b24Url(ctx), user, ctx.now()));
     log('Оргструктура загружена из Битрикс24',
       `связано: ${result.linked}, добавлено: ${result.created}, переведено: ${result.moved}, отключено: ${result.dismissed}`);
+    return result;
+  }, MUTATE);
+
+  admin('POST', '/api/admin/integrations/b24/link', async ({ ctx, body, log }) => {
+    const result = await external(() => linkUser(ctx.db, b24Url(ctx), body.userId, body.b24Id, ctx.now()));
+    log('Сотрудник связан с Битрикс24 вручную', `${result.name} → ${result.portalName} (ID ${result.b24Id})`);
     return result;
   }, MUTATE);
 

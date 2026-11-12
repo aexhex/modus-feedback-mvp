@@ -22,13 +22,17 @@ export const badRequest = (msg) => new HttpError(400, msg);
 export const forbidden = (msg = 'Недостаточно прав') => new HttpError(403, msg);
 export const notFound = (msg = 'Не найдено') => new HttpError(404, msg);
 
-const SECURITY_HEADERS = Object.freeze({
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy':
-    "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors 'none'",
-});
+const csp = (frameAncestors) =>
+  `default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; frame-ancestors ${frameAncestors}`;
+const BASE_HEADERS = Object.freeze({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+const SECURITY_HEADERS = Object.freeze({ ...BASE_HEADERS, 'X-Frame-Options': 'DENY', 'Content-Security-Policy': csp("'none'") });
+
+/**
+ * Заголовки страниц интерфейса. По умолчанию показ во фрейме запрещён; frameAncestors — кому разрешён
+ * (портал Битрикс24 компании или сам сервер для демо-портала), когда система открывается внутри портала.
+ */
+export const pageHeaders = (frameAncestors) =>
+  (frameAncestors ? { ...BASE_HEADERS, 'Content-Security-Policy': csp(frameAncestors) } : SECURITY_HEADERS);
 
 export function sendJson(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
@@ -46,18 +50,13 @@ export const ok = (res, data, status = 200, meta) =>
 export const fail = (res, status, message) =>
   sendJson(res, status, { ok: false, data: null, error: message });
 
-export function sendFile(res, status, body, headers) {
-  res.writeHead(status, { ...SECURITY_HEADERS, ...headers });
+export function sendFile(res, status, body, headers, base = SECURITY_HEADERS) {
+  res.writeHead(status, { ...base, ...headers });
   res.end(body);
 }
 
-export function readJson(req, maxBytes) {
+function readBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
-    const type = req.headers['content-type'] || '';
-    if (!type.startsWith('application/json')) {
-      reject(new HttpError(415, 'Ожидается Content-Type: application/json'));
-      return;
-    }
     const chunks = [];
     let size = 0;
     req.on('data', (chunk) => {
@@ -69,21 +68,31 @@ export function readJson(req, maxBytes) {
       }
       chunks.push(chunk);
     });
-    req.on('end', () => {
-      if (size === 0) return resolve({});
-      try {
-        const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-          reject(badRequest('Тело запроса должно быть JSON-объектом'));
-          return;
-        }
-        resolve(parsed);
-      } catch {
-        reject(badRequest('Некорректный JSON'));
-      }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
+}
+
+export async function readJson(req, maxBytes) {
+  const type = req.headers['content-type'] || '';
+  if (!type.startsWith('application/json')) throw new HttpError(415, 'Ожидается Content-Type: application/json');
+  const text = await readBody(req, maxBytes);
+  if (!text) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw badRequest('Некорректный JSON');
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw badRequest('Тело запроса должно быть JSON-объектом');
+  return parsed;
+}
+
+// Форма — только для открытия системы внутри портала: Битрикс24 присылает данные приложения обычной формой.
+export async function readForm(req, maxBytes) {
+  const type = req.headers['content-type'] || '';
+  if (!type.startsWith('application/x-www-form-urlencoded')) throw new HttpError(415, 'Ожидается форма');
+  return Object.fromEntries(new URLSearchParams(await readBody(req, maxBytes)));
 }
 
 export function parseCookies(header = '') {
