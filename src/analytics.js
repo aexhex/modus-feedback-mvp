@@ -3,6 +3,7 @@ import { STATUSES, TYPES, PRIORITIES } from './config.js';
 import { BASE_SELECT, isFinal, slaState } from './tickets-query.js';
 import { tokenize, jaccard } from './similarity.js';
 import { badRequest } from './http.js';
+import { getTargets, evaluateTargets } from './targets.js';
 
 const HOUR_MS = 3600 * 1000;
 const REPEAT_WINDOW_DAYS = 90;
@@ -67,6 +68,37 @@ function similarPairs(rows) {
     }
   }
   return pairs.sort((x, y) => y.score - x.score).slice(0, 5);
+}
+
+// Карта повторяющихся проблем за последние 90 дней: категория × подразделение.
+// В ячейке — сколько сотрудников подразделения столкнулись с проблемой: подали обращение
+// или отметили «У меня тоже». Одна категория в нескольких подразделениях — сигнал системной проблемы.
+function problemMap(db, rows, nowIso) {
+  const since = new Date(new Date(nowIso).getTime() - REPEAT_WINDOW_DAYS * 24 * HOUR_MS).toISOString();
+  const recent = rows.filter((r) => r.type !== 'praise' && r.created_at >= since && !r.duplicate_of);
+  const recentById = new Map(recent.map((r) => [r.id, r]));
+  const supporters = db
+    .prepare('SELECT s.ticket_id, u.department FROM supports s JOIN users u ON u.id = s.user_id')
+    .all()
+    .filter((s) => recentById.has(s.ticket_id));
+  const marks = [
+    ...recent.map((r) => ({ ticket: r, department: r.department })),
+    ...supporters.map((s) => ({ ticket: recentById.get(s.ticket_id), department: s.department })),
+  ];
+  const departments = countBy(marks, (m) => m.department).map((d) => d.key);
+  const byCategory = new Map();
+  for (const { ticket, department } of marks) {
+    const prev = byCategory.get(ticket.category_name) ?? { category: ticket.category_name, categoryId: ticket.category_id, counts: new Map() };
+    const counts = new Map(prev.counts);
+    counts.set(department, (counts.get(department) ?? 0) + 1);
+    byCategory.set(ticket.category_name, { ...prev, counts });
+  }
+  const categories = [...byCategory.values()].map(({ category, categoryId, counts }) => {
+    const cells = departments.map((d) => counts.get(d) ?? 0);
+    return { category, categoryId, cells, total: cells.reduce((a, b) => a + b, 0), spread: cells.filter(Boolean).length };
+  }).sort((a, b) => b.spread - a.spread || b.total - a.total || a.category.localeCompare(b.category, 'ru'));
+  const max = Math.max(0, ...categories.flatMap((c) => c.cells));
+  return { departments, categories, max };
 }
 
 // Динамика за последние WEEKS недель (неделя начинается в понедельник по московскому времени).
@@ -155,19 +187,22 @@ export function buildAnalytics(db, nowIso) {
       id: r.id, code: r.code, title: r.title, assignee: r.assignee_name, kind: sla.kind,
       priorityLabel: PRIORITIES[r.priority], statusLabel: STATUSES[r.status],
     }));
+  const kpi = {
+    reviewedShare: share(rows.filter((r) => r.first_response_at).length, rows.length),
+    closedShare: share(finals.length, rows.length),
+    withResultShare: share(finals.filter((r) => r.resolution).length, finals.length),
+    avgFirstResponseHours: avgFirstResponseHours(rows),
+    implementedCount: db
+      .prepare("SELECT COUNT(DISTINCT ticket_id) AS n FROM events WHERE to_status = 'implemented'")
+      .get().n,
+    overdueCount: overdue.length,
+    ...authorFeedback(db),
+  };
   return {
     total: rows.length,
-    kpi: {
-      reviewedShare: share(rows.filter((r) => r.first_response_at).length, rows.length),
-      closedShare: share(finals.length, rows.length),
-      withResultShare: share(finals.filter((r) => r.resolution).length, finals.length),
-      avgFirstResponseHours: avgFirstResponseHours(rows),
-      implementedCount: db
-        .prepare("SELECT COUNT(DISTINCT ticket_id) AS n FROM events WHERE to_status = 'implemented'")
-        .get().n,
-      overdueCount: overdue.length,
-      ...authorFeedback(db),
-    },
+    kpi,
+    targets: evaluateTargets(kpi, getTargets(db)),
+    problemMap: problemMap(db, rows, nowIso),
     byType: countBy(rows, (r) => r.type, TYPES),
     byStatus: countBy(rows, (r) => r.status, STATUSES),
     byCategory: countBy(rows, (r) => r.category_name),

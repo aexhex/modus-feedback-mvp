@@ -1,4 +1,7 @@
 // Заполнение пустой БД демонстрационными данными из датасета с правдоподобной историей.
+import { randomBytes } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join, extname } from 'node:path';
 import { SLA_HOURS, addHours, addBusinessHours } from './config.js';
 import { inTransaction } from './db.js';
 import { addEvent } from './tickets-actions.js';
@@ -136,7 +139,35 @@ function seedClientFeedback(db, nowIso) {
   for (const [name, company, score, message, hoursAgo] of rows) insert.run(name, company, score, message, addHours(nowIso, -hoursAgo));
 }
 
-export function seedIfEmpty(db, nowIso) {
+// Демонстрационные вложения, чтобы раздел «Материалы» в карточках не был пустым. Содержимое вымышленное.
+const SAMPLE_FILES = [
+  ['A-001', 'author', 'пример_заявки_на_закупку.csv', 2,
+    'Позиция;Назначение;Требуемые параметры;Количество\nНасос циркуляционный;Система отопления корпуса Б;Расход 6 м3/ч, напор 8 м;2\nКлапан балансировочный;Стояк 3;DN25, PN16;4\n'],
+  ['A-003', 'assignee', 'расхождения_обозначений.csv', 40,
+    'Обозначение в спецификации;Обозначение в каталоге;Комментарий\nНасос ЦН-25/6;ЦН 25-6;одна позиция, разное написание\nКлапан КБ-25;КБ25-16;нужна проверка карточки\n'],
+  ['A-005', 'author', 'этапы_согласования_документов.txt', 30,
+    'Этапы, где возникают вопросы:\n1. Передача пакета от проекта в бухгалтерию — не видно, кто принял.\n2. Подписание у руководителя направления — неизвестен срок.\n3. Возврат на исправление — непонятно, на каком этапе пакет.\n'],
+];
+
+function seedAttachments(db, uploadsDir, inserted) {
+  mkdirSync(uploadsDir, { recursive: true });
+  const insert = db.prepare(
+    'INSERT INTO attachments (ticket_id, uploader_id, original_name, stored_name, size, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  );
+  for (const [code, who, name, hour, content] of SAMPLE_FILES) {
+    const ticket = inserted[TICKETS.findIndex((t) => t.code === code)];
+    const { author_id: authorId } = db.prepare('SELECT author_id FROM tickets WHERE id = ?').get(ticket.id);
+    const uploaderId = who === 'author' ? authorId : ticket.assigneeId;
+    const buffer = Buffer.from(content, 'utf8');
+    const storedName = `${randomBytes(16).toString('hex')}${extname(name)}`;
+    writeFileSync(join(uploadsDir, storedName), buffer);
+    insert.run(ticket.id, uploaderId, name, storedName, buffer.length, ticket.at(hour));
+    addEvent(db, { ticketId: ticket.id, actorId: uploaderId, kind: 'attachment', body: `Прикреплён файл: ${name}`, at: ticket.at(hour) });
+  }
+}
+
+// uploadsDir не обязателен: без него база заполняется без демонстрационных файлов.
+export function seedIfEmpty(db, nowIso, uploadsDir = null) {
   const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get();
   if (n > 0) return false;
   const nowMs = new Date(nowIso).getTime();
@@ -170,6 +201,7 @@ export function seedIfEmpty(db, nowIso) {
     seedVotes(db, users, nowIso);
     seedSurvey(db, users, nowIso);
     seedClientFeedback(db, nowIso);
+    if (uploadsDir) seedAttachments(db, uploadsDir, inserted);
   });
   return true;
 }

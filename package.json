@@ -12,7 +12,12 @@
     "reset": "node -e \"process.env.RESET='1'; process.env.DEMO_MODE ??= '1'; import('./server.js')\"",
     "test": "node --test --experimental-test-coverage --test-coverage-include=src/**/*.js test/",
     "test:e2e": "playwright test",
-    "screenshots": "playwright test --config playwright.screenshots.config.js"
+    "screenshots": "playwright test --config playwright.screenshots.config.js",
+    "voice": "python scripts/voice-neural.py",
+    "voice:offline": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/voice.ps1",
+    "video": "playwright test --config playwright.video.config.js",
+    "video:voice": "node scripts/mix-voice.mjs",
+    "i18n:check": "node scripts/i18n-extract.mjs --list"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

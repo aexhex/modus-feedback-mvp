@@ -11,7 +11,8 @@ const PAGES = [
   ['идеи коллег', 'Сотрудник офиса', '/#/tickets?scope=feed', 'tbody tr'],
   ['новое обращение', 'Сотрудник офиса', '/#/new', '.type-card'],
   ['канбан', 'Ответственный за обучение', '/#/kanban', '.kb-card'],
-  ['аналитика', 'Директор по развитию', '/#/analytics', '.kpi'],
+  ['аналитика', 'Директор по развитию', '/#/analytics', '.heatmap'],
+  ['база решений', 'Сотрудник офиса', '/#/solutions', '.solution'],
   ['сводка недели', 'Директор по развитию', '/#/digest', '.digest-text'],
   ['настройки', 'Администратор системы', '/#/admin', '.users-table'],
 ];
@@ -38,7 +39,11 @@ test('доступность: карточка обращения у ответ�
   expect(await serious(page)).toEqual([]);
 });
 
-for (const [name, url, ready] of [['главная', '/#/home', 'figure.chart'], ['карточка обращения', '/#/t/3', '.t-head']]) {
+// /#/t/7 — A-007 с просроченным первым ответом: проверяется красная пометка на шкале этапов.
+for (const [name, url, ready] of [
+  ['главная', '/#/home', 'figure.chart'], ['карточка обращения', '/#/t/3', '.t-head'],
+  ['аналитика', '/#/analytics', '.heatmap'], ['просроченное обращение', '/#/t/7', '.step-late'],
+]) {
   test(`доступность в тёмной теме: ${name}`, async ({ page }) => {
     await loginAs(page, 'Директор по развитию');
     await page.evaluate(() => localStorage.setItem('theme', 'dark'));

@@ -68,4 +68,12 @@ test('снимки экранов для README', async ({ page }) => {
   await page.goto('/#/analytics');
   await page.locator('.kpi').first().waitFor();
   await shot(page, '10-analytics-dark');
+  await page.getByRole('button', { name: 'Переключить светлую и тёмную тему' }).click();
+
+  // Карта повторяющихся проблем и база решений (доработки по ТЗ 1.3 и 2.7).
+  await page.locator('.heatmap-card').screenshot({ path: 'docs/screenshots/18-problem-map.png' });
+  await loginAs(page, 'Сотрудник офиса');
+  await page.goto('/#/solutions');
+  await page.locator('.solution').first().waitFor();
+  await shot(page, '17-solutions');
 });

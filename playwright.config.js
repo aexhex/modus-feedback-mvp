@@ -5,7 +5,7 @@ const PORT = 3210;
 
 export default defineConfig({
   testDir: 'e2e',
-  testIgnore: '**/screenshots.spec.js',
+  testIgnore: ['**/screenshots.spec.js', '**/demo-video.spec.js'],
   workers: 1,
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,

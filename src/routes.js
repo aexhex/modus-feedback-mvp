@@ -18,6 +18,8 @@ import { uploadAttachment, readAttachment } from './attachments.js';
 import { listNotifications, markAllRead, listOutbox } from './notifications.js';
 import { setWatching, inviteWatcher, createB24Task } from './collab.js';
 import { getSlaDays, setSla, listHolidays, setHolidays } from './settings.js';
+import { listTargets, setTargets } from './targets.js';
+import { listSolutions } from './solutions.js';
 import { castVote, voteSummary } from './votes.js';
 import { buildDigest, sendDigest } from './digest.js';
 import { importUsers } from './user-import.js';
@@ -145,6 +147,7 @@ export function registerRoutes(router) {
   });
 
   // --- Прозрачность, аналитика, уведомления ---
+  add('GET', '/api/solutions', ({ ctx, user, query }) => listSolutions(ctx.db, user, query));
   add('GET', '/api/board', ({ ctx }) => ({ ...improvementsBoard(ctx.db), ...recognition(ctx.db, ctx.now()) }));
   add('GET', '/api/digest', ({ ctx, user }) => {
     requireRole(canSeeAnalytics, user);
@@ -222,6 +225,13 @@ export function registerRoutes(router) {
     setSla(ctx.db, body);
     log('Сроки SLA изменены', getSlaDays(ctx.db).map((s) => `${s.label}: ${s.firstResponseDays}/${s.resolveDays}`).join('; '));
     return getSlaDays(ctx.db);
+  }, MUTATE);
+  admin('GET', '/api/admin/targets', ({ ctx }) => listTargets(ctx.db));
+  admin('PATCH', '/api/admin/targets', ({ ctx, body, log }) => {
+    setTargets(ctx.db, body);
+    const targets = listTargets(ctx.db);
+    log('Цели показателей изменены', targets.map((t) => `${t.label}: ${t.dir === 'min' ? '≥' : '≤'} ${t.value} ${t.unit}`).join('; '));
+    return targets;
   }, MUTATE);
   admin('GET', '/api/admin/holidays', ({ ctx }) => listHolidays(ctx.db));
   admin('PATCH', '/api/admin/holidays', ({ ctx, body, log }) => {
