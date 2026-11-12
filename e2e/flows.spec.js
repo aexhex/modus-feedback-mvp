@@ -79,9 +79,9 @@ test('сотруднику недоступны аналитика и настр
   await expect(page.locator('#content')).toContainText('нет доступа');
 });
 
-test('администратор видит журнал имитации Битрикс24', async ({ page }) => {
+test('администратор видит журнал отправки в Битрикс24', async ({ page }) => {
   await loginAs(page, 'Администратор системы');
   await page.getByRole('link', { name: 'Настройки' }).click();
-  await expect(page.getByText('Уведомления в Битрикс24 — имитация')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Журнал отправки в Битрикс24' })).toBeVisible();
   await expect(page.getByText('bitrix24 · im.notify').first()).toBeVisible();
 });

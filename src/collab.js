@@ -1,4 +1,4 @@
-// Совместная работа над обращением: подписка, приглашение коллеги, задача в Битрикс24 (имитация).
+// Совместная работа над обращением: подписка, приглашение коллеги, задача в Битрикс24.
 import { canProcess } from './access.js';
 import { badRequest, forbidden } from './http.js';
 import { inTransaction } from './db.js';
@@ -49,8 +49,9 @@ export function inviteWatcher(db, user, id, input, now) {
   });
 }
 
-// ИМИТАЦИЯ: вместо вызова REST tasks.task.add запись попадает в журнал outbox.
-export function createB24Task(db, user, id, _input, now) {
+// Вызов tasks.task.add пишется в журнал outbox и отправляется в фоне; номер задачи с портала
+// появится в истории обращения после отправки. Без подключения к порталу — имитация с условным номером.
+export function createB24Task(db, user, id, _input, now, { live = false } = {}) {
   const row = getVisibleTicketRow(db, user, id);
   if (!canProcess(user, row)) throw forbidden();
   if (isFinal(row.status)) throw badRequest('Обращение уже рассмотрено');
@@ -61,12 +62,16 @@ export function createB24Task(db, user, id, _input, now) {
     const outboxId = logOutbox(db, {
       method: 'tasks.task.add',
       recipient: row.assignee_name ?? 'Не назначен',
+      userId: row.assignee_id,
+      ticketId: row.id,
       payload: { TITLE: `[${row.code}] ${row.title}`, DEADLINE: row.due_at, MESSAGE: `Задача по обращению ${row.code}`, LINK: `/#/t/${row.id}` },
       now,
     });
     addEvent(db, {
       ticketId: row.id, actorId: user.id, kind: 'b24_task', at: now,
-      body: `Создана задача в Битрикс24 №${TASK_NUMBER_BASE + outboxId} (имитация), срок — по SLA обращения`,
+      body: live
+        ? 'Задача отправлена в Битрикс24, срок — по SLA обращения'
+        : `Создана задача в Битрикс24 №${TASK_NUMBER_BASE + outboxId} (имитация), срок — по SLA обращения`,
     });
   });
 }

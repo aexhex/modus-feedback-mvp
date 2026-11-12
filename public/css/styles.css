@@ -640,3 +640,13 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 .lang-btn.active { background: var(--brand); color: #fff; }
 .lang-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .login-top { gap: 10px; align-items: center; }
+
+/* Интеграции с Битрикс24 и 1С УТ */
+.integration { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.integration h4 { margin: 0; }
+.integration .sub-h { margin-top: 10px; }
+.integration code { font-size: 12px; }
+.code-block { display: block; max-width: 100%; overflow-wrap: anywhere; padding: 6px 8px; border-radius: var(--r-sm); background: var(--chip-bg); color: var(--text); }
+.sync-preview { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.sync-group ul { margin-top: 4px; }
+.outbox-error { color: var(--st-rejected); font-size: 13px; }

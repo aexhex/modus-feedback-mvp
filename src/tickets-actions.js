@@ -9,6 +9,7 @@ import { resolveAssignee } from './routing.js';
 import { notify } from './notifications.js';
 import { getTicketRow, getVisibleTicketRow, isFinal, watcherIds } from './tickets-query.js';
 import { getSla, getHolidays } from './settings.js';
+import { validCounterpartyId } from './integrations/onec.js';
 
 function text(value, { field, min = 0, max, required = false }) {
   const str = typeof value === 'string' ? value.trim() : '';
@@ -55,6 +56,7 @@ export function validateNewTicket(db, input) {
     priority: input.priority ? oneOf(input.priority, PRIORITIES, 'Приоритет') : 'medium',
     isAnonymous: input.isAnonymous === true,
     isPublic: input.isPublic === true,
+    counterpartyId: validCounterpartyId(db, input.counterpartyId),
   };
 }
 
@@ -68,13 +70,15 @@ export function createTicket(db, user, input, now) {
     const { lastInsertRowid } = db
       .prepare(
         `INSERT INTO tickets (code, type, category_id, title, description, proposed_solution, priority, status,
-           author_id, is_anonymous, is_public, department, assignee_id, created_at, updated_at, first_response_due, due_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           author_id, is_anonymous, is_public, department, assignee_id, created_at, updated_at, first_response_due, due_at,
+           counterparty_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         code, data.type, data.categoryId, data.title, data.description, data.proposedSolution, data.priority,
         user.id, data.isAnonymous ? 1 : 0, data.isPublic ? 1 : 0, user.department, assignment.userId, now, now,
         addBusinessHours(now, sla.firstResponse, holidays), addBusinessHours(now, sla.resolve, holidays),
+        data.counterpartyId,
       );
     const ticketId = Number(lastInsertRowid);
     addEvent(db, { ticketId, actorId: user.id, kind: 'created', to: 'new', at: now });

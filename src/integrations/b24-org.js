@@ -1,0 +1,115 @@
+// Оргструктура из Битрикс24 (ТЗ 1.2: «интеграция для назначения ответственных»).
+// department.get + user.get → сотрудники, их подразделения и руководители подразделений.
+// Сначала предпросмотр (ничего не меняет), затем применение — с повторной загрузкой с портала,
+// чтобы применялось ровно то, что сейчас на портале, а не данные из браузера.
+import { b24List } from './clients.js';
+import { inTransaction } from '../db.js';
+import { HttpError } from '../http.js';
+import { updateUser } from '../admin.js';
+import { requeueUnlinked } from './delivery.js';
+
+const REQUEUE_WINDOW_MS = 24 * 3600 * 1000;
+// Если портал вернул подозрительно мало сотрудников (урезанные права вебхука, сбой), массово
+// отключать людей нельзя: увольнения в этом случае не применяются.
+const MAX_DISMISS_SHARE = 0.3;
+
+const fullName = (u) => `${u.NAME ?? ''} ${u.LAST_NAME ?? ''}`.replace(/\s+/g, ' ').trim();
+const isActive = (u) => u.ACTIVE === true || u.ACTIVE === 'Y' || u.ACTIVE === '1';
+
+async function loadPortal(webhookUrl) {
+  const [departments, users] = await Promise.all([b24List(webhookUrl, 'department.get'), b24List(webhookUrl, 'user.get')]);
+  const deptName = new Map(departments.map((d) => [String(d.ID), String(d.NAME ?? '').trim()]));
+  const heads = new Set(departments.map((d) => String(d.UF_HEAD ?? '')).filter(Boolean));
+  const people = users
+    .map((u) => ({
+      b24Id: Number(u.ID),
+      name: fullName(u).slice(0, 80),
+      department: deptName.get(String((u.UF_DEPARTMENT ?? [])[0])) || 'Без подразделения',
+      active: isActive(u),
+      isHead: heads.has(String(u.ID)),
+    }))
+    .filter((p) => Number.isInteger(p.b24Id) && p.name.length >= 2);
+  return { departments: departments.length, people };
+}
+
+// Сопоставление: сначала по ID Битрикс24, затем по ФИО среди ещё не связанных.
+function plan(db, portal) {
+  const locals = db.prepare('SELECT id, name, role, department, is_active, b24_id FROM users').all();
+  const byB24 = new Map(locals.filter((u) => u.b24_id).map((u) => [u.b24_id, u]));
+  const byName = new Map(locals.filter((u) => !u.b24_id).map((u) => [u.name, u]));
+  const seen = new Set();
+  const link = [];
+  const update = [];
+  const create = [];
+  for (const p of portal.people) {
+    const local = byB24.get(p.b24Id) ?? byName.get(p.name);
+    // Совпадение по ФИО используется один раз: однофамилец на портале не привяжется к тому же человеку.
+    if (local && !local.b24_id) byName.delete(p.name);
+    if (!local) {
+      if (p.active) create.push({ ...p, role: p.isHead ? 'handler' : 'employee' });
+      continue;
+    }
+    seen.add(local.id);
+    if (!local.b24_id) link.push({ id: local.id, name: local.name, b24Id: p.b24Id });
+    if (local.is_active && p.active && local.department !== p.department) {
+      update.push({ id: local.id, name: local.name, from: local.department, to: p.department });
+    }
+    if (local.is_active && !p.active) update.push({ id: local.id, name: local.name, dismiss: true });
+  }
+  // Связанный сотрудник, которого больше нет на портале, тоже считается уволенным.
+  for (const u of locals) {
+    if (u.b24_id && u.is_active && !seen.has(u.id)) update.push({ id: u.id, name: u.name, dismiss: true });
+  }
+  const activeLocal = locals.filter((u) => u.is_active).length;
+  const dismissCount = update.filter((u) => u.dismiss).length;
+  const suspicious = portal.people.length === 0 || dismissCount > Math.max(2, activeLocal * MAX_DISMISS_SHARE);
+  return { departments: portal.departments, portalUsers: portal.people.length, link, update, create, suspicious };
+}
+
+export async function previewOrgSync(db, webhookUrl) {
+  const p = plan(db, await loadPortal(webhookUrl));
+  return {
+    departments: p.departments,
+    portalUsers: p.portalUsers,
+    linked: p.link.map(({ name }) => name),
+    created: p.create.map(({ name, department, role }) => ({ name, department, role })),
+    moved: p.update.filter((u) => !u.dismiss).map(({ name, from, to }) => ({ name, from, to })),
+    dismissed: p.update.filter((u) => u.dismiss).map(({ name }) => name),
+    dismissBlocked: p.suspicious,
+  };
+}
+
+/** @returns {{ linked: number, created: number, moved: number, dismissed: number, warnings: string[] }} */
+export async function applyOrgSync(db, webhookUrl, actor, nowIso) {
+  const p = plan(db, await loadPortal(webhookUrl));
+  return inTransaction(db, () => {
+    const warnings = [];
+    for (const l of p.link) db.prepare('UPDATE users SET b24_id = ? WHERE id = ?').run(l.b24Id, l.id);
+    let created = 0;
+    for (const c of p.create) {
+      if (db.prepare('SELECT 1 FROM users WHERE name = ?').get(c.name)) {
+        warnings.push(`${c.name}: в системе уже есть пользователь с таким именем — свяжите вручную`);
+        continue;
+      }
+      db.prepare('INSERT INTO users (name, role, department, b24_id) VALUES (?, ?, ?, ?)').run(c.name, c.role, c.department, c.b24Id);
+      created += 1;
+    }
+    let moved = 0;
+    let dismissed = 0;
+    if (p.suspicious && p.update.some((u) => u.dismiss)) {
+      warnings.push('С портала пришло подозрительно мало сотрудников — отключение уволенных пропущено, проверьте права вебхука');
+    }
+    for (const u of p.update.filter((x) => !(x.dismiss && p.suspicious))) {
+      try {
+        // Через updateUser: при увольнении его открытые обращения уходят следующему по правилу категории.
+        updateUser(db, actor, u.id, u.dismiss ? { isActive: false } : { department: u.to }, nowIso);
+        if (u.dismiss) dismissed += 1; else moved += 1;
+      } catch (error) {
+        if (!(error instanceof HttpError)) throw error;
+        warnings.push(`${u.name}: ${error.message}`);
+      }
+    }
+    requeueUnlinked(db, new Date(new Date(nowIso).getTime() - REQUEUE_WINDOW_MS).toISOString());
+    return { linked: p.link.length, created, moved, dismissed, warnings };
+  });
+}

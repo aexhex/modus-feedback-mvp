@@ -9,6 +9,9 @@ import { registerRoutes } from './routes.js';
 import { userByToken } from './auth.js';
 import { LIMITS, SESSION_COOKIE, ESCALATION_INTERVAL_MS } from './config.js';
 import { escalateOverdue } from './escalation.js';
+import { readIntegrationConfig, resolveEndpoints, DEMO_PORTAL_PREFIX } from './integrations/config.js';
+import { createDelivery, markOutboxHistory } from './integrations/delivery.js';
+import { createDemoPortal } from './integrations/demo-portal.js';
 import {
   HttpError, createRouter, readJson, ok, fail, sendFile, parseCookies,
 } from './http.js';
@@ -53,8 +56,13 @@ async function serveStatic(publicDir, pathname, res) {
   }
 }
 
+// Как часто повторять неудавшуюся отправку в Битрикс24.
+const DELIVERY_INTERVAL_MS = 15_000;
+
 /**
- * @param {{ dbPath: string, uploadsDir: string, publicDir: string, now?: () => string, seed?: boolean, logger?: Console, escalationIntervalMs?: number }} options
+ * @param {{ dbPath: string, uploadsDir: string, publicDir: string, now?: () => string, seed?: boolean, logger?: Console,
+ *   escalationIntervalMs?: number, integrations?: object }} options
+ * integrations — подключение к Битрикс24 и 1С вместо переменных окружения (тесты).
  */
 export function createApp({
   dbPath, uploadsDir, publicDir, now = () => new Date().toISOString(), seed = true, logger = console,
@@ -62,12 +70,19 @@ export function createApp({
   // Демо-режим разрешает сброс данных кнопкой в настройках. Включается только явно (DEMO_MODE=1),
   // чтобы случайный запуск без настройки не открыл стирание данных.
   demoMode = process.env.DEMO_MODE === '1',
+  integrations: integrationOverrides = {},
 }) {
   const db = openDatabase(dbPath);
-  if (seed) seedIfEmpty(db, now(), uploadsDir);
+  const seeded = seed && seedIfEmpty(db, now(), uploadsDir);
   seedTemplates(db);
   escalateOverdue(db, now());
-  const ctx = { db, uploadsDir, now, demoMode };
+  if (seeded) markOutboxHistory(db);
+  const config = readIntegrationConfig({ demoMode, overrides: integrationOverrides });
+  const demoPortal = config.b24.mode === 'demo' || config.onec.mode === 'demo' ? createDemoPortal() : null;
+  let server;
+  const endpoints = () => resolveEndpoints(config, `http://127.0.0.1:${server.address().port}`);
+  const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger });
+  const ctx = { db, uploadsDir, now, demoMode, integrations: { config, endpoints, delivery } };
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);
@@ -99,13 +114,21 @@ export function createApp({
       setMeta: (value) => { meta = value; },
       sendRaw: (buf, headers) => { raw = true; sendFile(res, 200, buf, headers); },
     });
+    // Изменения могли добавить вызовы Битрикс24 в журнал — отправка идёт в фоне, ответ её не ждёт.
+    if (hasBody) delivery.kick();
     if (!raw) ok(res, data, statusCode, meta);
   }
 
-  const server = createServer(async (req, res) => {
+  async function handleDemoPortal(req, res, url) {
+    const params = req.method === 'POST' ? await readJson(req, LIMITS.jsonBodyBytes) : {};
+    demoPortal.handle(req, res, url.pathname.slice(DEMO_PORTAL_PREFIX.length), params);
+  }
+
+  server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     try {
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
+      if (demoPortal && url.pathname.startsWith(`${DEMO_PORTAL_PREFIX}/`)) return await handleDemoPortal(req, res, url);
       if (req.method !== 'GET') return fail(res, 405, 'Метод не поддерживается');
       return await serveStatic(publicDir, decodeURIComponent(url.pathname), res);
     } catch (error) {
@@ -120,6 +143,7 @@ export function createApp({
     const timer = setInterval(() => {
       try {
         escalateOverdue(db, now());
+        delivery.kick();
       } catch (error) {
         logger.error('[escalation]', error);
       }
@@ -127,6 +151,15 @@ export function createApp({
     timer.unref();
     server.on('close', () => clearInterval(timer));
   }
+  // Повторы отправки в Битрикс24 и записи, появившиеся до запуска сервера.
+  if (config.b24.mode !== 'off') {
+    const retry = setInterval(() => delivery.kick(), DELIVERY_INTERVAL_MS);
+    retry.unref();
+    server.on('close', () => clearInterval(retry));
+    server.on('listening', () => delivery.kick());
+  } else {
+    delivery.kick();
+  }
 
-  return { server, db };
+  return { server, db, delivery, demoPortal };
 }

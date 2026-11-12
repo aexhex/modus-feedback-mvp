@@ -1,7 +1,8 @@
 import { h, mount, toast, options } from '../dom.js';
-import { locale, t } from '../i18n.js';
+import { t } from '../i18n.js';
 import { get, post, patch } from '../api.js';
 import { templatesCard, holidaysCard, usersAdminCard, auditCard } from './admin-extra.js';
+import { integrationsCard, outboxCard } from './admin-integrations.js';
 
 const ROLE_LABELS = { employee: 'Сотрудник', handler: 'Ответственный', manager: 'Руководитель', admin: 'Администратор' };
 
@@ -32,18 +33,6 @@ function categoriesCard(categories, staff, reload) {
         h('td', null, h('input', { type: 'checkbox', checked: c.isActive, 'aria-label': 'Активна', onchange: (e) => save(c.id, { isActive: e.target.checked }) })))))),
     h('form', { class: 'row', style: { marginTop: '14px' }, onsubmit: add },
       h('div', { style: { flex: '1', minWidth: '220px' } }, nameIn), h('button', { class: 'btn btn-primary', type: 'submit' }, 'Добавить категорию')));
-}
-
-// Журнал того, что ушло бы в Битрикс24 (REST im.notify). Реальной отправки в MVP нет.
-function outboxCard(items) {
-  return h('section', { class: 'card' },
-    h('h3', null, 'Уведомления в Битрикс24 — имитация'),
-    h('p', { class: 't-sub' }, 'Интеграция не подключена: здесь показано, какие вызовы im.notify система отправила бы на портал. Последние 50 записей.'),
-    items.length === 0 ? h('p', { class: 'muted' }, 'Пока пусто')
-      : h('ul', { class: 'list-plain' }, items.map((o) => h('li', null,
-        h('div', null, h('span', { class: 'chip' }, `${o.channel} · ${o.method}`), ' → ', h('b', null, o.recipient)),
-        h('div', null, o.payload.MESSAGE),
-        h('div', { class: 't-sub' }, new Date(o.createdAt).toLocaleString(locale()))))));
 }
 
 // Сроки SLA в рабочих днях; действуют для обращений, созданных после сохранения.
@@ -125,20 +114,21 @@ function demoCard() {
 }
 
 export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
-  const [categories, users, outbox, sla, templates, holidays, auditLog, targets] = await Promise.all([
+  const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations] = await Promise.all([
     get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
-    get('/admin/templates'), get('/admin/holidays'), get('/admin/audit'), get('/admin/targets'),
+    get('/admin/templates'), get('/admin/holidays'), get('/admin/audit'), get('/admin/targets'), get('/admin/integrations'),
   ]);
   const staff = users.filter((u) => u.role !== 'employee' && u.isActive);
   const reload = async () => { await refreshMeta(); rerender(); };
   mount(el,
     h('div', { class: 'page-head' },
-      h('div', null, h('h1', null, 'Настройки'), h('p', null, 'Категории и маршрутизация, пользователи, сроки, праздники, шаблоны ответов. Каждое изменение попадает в журнал.'))),
+      h('div', null, h('h1', null, 'Настройки'), h('p', null, 'Категории и маршрутизация, пользователи, сроки, праздники, интеграции, шаблоны ответов. Каждое изменение попадает в журнал.'))),
     meta.demoMode && demoCard(),
     categoriesCard(categories, staff, reload),
     usersAdminCard(users, me, reload),
     h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload), holidaysCard(holidays, reload)),
     targetsCard(targets, reload),
+    integrationsCard(integrations, reload),
     templatesCard(templates, reload),
-    h('div', { class: 'an-grid admin-pair' }, outboxCard(outbox), auditCard(auditLog)));
+    h('div', { class: 'an-grid admin-pair' }, outboxCard(outbox, integrations, reload), auditCard(auditLog)));
 }

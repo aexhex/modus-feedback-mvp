@@ -216,10 +216,14 @@ export function getTicketDetail(db, user, id, nowIso) {
     .prepare('SELECT u.id, u.name FROM watchers w JOIN users u ON u.id = w.user_id WHERE w.ticket_id = ? ORDER BY u.name')
     .all(row.id);
   const taskEvent = db
-    .prepare("SELECT body, created_at FROM events WHERE ticket_id = ? AND kind = 'b24_task' ORDER BY id LIMIT 1")
+    .prepare("SELECT body, created_at FROM events WHERE ticket_id = ? AND kind = 'b24_task' ORDER BY id DESC LIMIT 1")
     .get(row.id);
+  const counterparty = db
+    .prepare('SELECT k.id, k.name, k.inn FROM counterparties k JOIN tickets t ON t.counterparty_id = k.id WHERE t.id = ?')
+    .get(row.id) ?? null;
   return {
     ...serializeTicket(row, user, nowIso),
+    counterparty,
     duplicateOf,
     events,
     attachments,

@@ -136,6 +136,7 @@ function factsCard(t, reload) {
       fact('Категория', t.category.name),
       fact('Автор', t.author ? t.author.name : 'Скрыт (анонимно)'),
       fact('Подразделение', t.department ?? 'Скрыто (анонимно)'),
+      t.counterparty && [h('dt', null, 'Клиент (1С УТ)'), h('dd', { 'data-no-i18n': '' }, t.counterparty.name)],
       fact('Ответственный', t.assignee?.name ?? 'Не назначен'),
       fact('Создано', fmtDate(t.createdAt)),
       fact('Первый ответ', t.firstResponseAt ? fmtDate(t.firstResponseAt) : `до ${fmtDate(t.firstResponseDue)}`),
