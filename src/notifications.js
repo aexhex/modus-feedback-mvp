@@ -1,6 +1,6 @@
-// Внутренние уведомления + ИМИТАЦИЯ отправки в Битрикс24: вместо реального вызова REST
-// im.notify сообщение записывается в журнал outbox (виден администратору в «Настройках»).
-// В промышленной версии запись в outbox заменяется HTTP-вызовом — см. docs/ARCHITECTURE.md.
+// Внутренние уведомления + копия в Битрикс24: каждое уведомление пишется в журнал outbox
+// (виден администратору в «Настройках»), откуда его отправляет src/integrations/delivery.js.
+// Без подключения к порталу запись остаётся в журнале как имитация.
 
 const OUTBOX_LIMIT = 50;
 
@@ -10,7 +10,7 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
     'INSERT INTO notifications (user_id, ticket_id, text, created_at) VALUES (?, ?, ?, ?)',
   );
   const toOutbox = db.prepare(
-    "INSERT INTO outbox (channel, method, recipient, payload, created_at) VALUES ('bitrix24', 'im.notify', ?, ?, ?)",
+    "INSERT INTO outbox (channel, method, recipient, payload, user_id, ticket_id, created_at) VALUES ('bitrix24', 'im.notify', ?, ?, ?, ?, ?)",
   );
   const nameOf = db.prepare('SELECT name FROM users WHERE id = ?');
   // Журнал виден администратору. У анонимного обращения скрыты все получатели, а не только автор:
@@ -20,7 +20,7 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
   for (const userId of unique) {
     insert.run(userId, ticketId, text, now);
     const recipient = hideAll ? 'Получатель скрыт (анонимное обращение)' : (nameOf.get(userId)?.name ?? `user:${userId}`);
-    toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: `/#/t/${ticketId}` }), now);
+    toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: `/#/t/${ticketId}` }), userId, ticketId ?? null, now);
   }
 }
 
@@ -44,15 +44,18 @@ export function markAllRead(db, userId) {
 
 export function listOutbox(db) {
   return db
-    .prepare('SELECT id, channel, method, recipient, payload, created_at AS createdAt FROM outbox ORDER BY id DESC LIMIT ?')
+    .prepare(`SELECT id, channel, method, recipient, payload, status, attempts, error, external_id AS externalId,
+                     sent_at AS sentAt, created_at AS createdAt
+              FROM outbox ORDER BY id DESC LIMIT ?`)
     .all(OUTBOX_LIMIT)
     .map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
 }
 
-// Запись произвольного вызова Битрикс24 в журнал имитации; возвращает номер записи.
-export function logOutbox(db, { method, recipient, payload, now }) {
+// Запись произвольного вызова Битрикс24 в журнал отправки; возвращает номер записи.
+// userId — получатель или ответственный в системе (по нему находится ID в Битрикс24).
+export function logOutbox(db, { method, recipient, payload, userId = null, ticketId = null, now }) {
   const { lastInsertRowid } = db
-    .prepare("INSERT INTO outbox (channel, method, recipient, payload, created_at) VALUES ('bitrix24', ?, ?, ?, ?)")
-    .run(method, recipient, JSON.stringify(payload), now);
+    .prepare("INSERT INTO outbox (channel, method, recipient, payload, user_id, ticket_id, created_at) VALUES ('bitrix24', ?, ?, ?, ?, ?, ?)")
+    .run(method, recipient, JSON.stringify(payload), userId, ticketId, now);
   return Number(lastInsertRowid);
 }

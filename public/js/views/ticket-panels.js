@@ -80,14 +80,15 @@ function duplicateForm(t, onDone) {
   }, onDone) }, h('div', { style: { flex: '1' } }, code), h('button', { class: 'btn btn-sm', type: 'submit' }, 'Объединить'));
 }
 
-// ИМИТАЦИЯ интеграции: задача не уходит в Битрикс24, а записывается в журнал (см. «Настройки»).
-function taskBlock(t, onDone) {
+// Задача уходит в Битрикс24 (tasks.task.add); без подключения к порталу — только запись в журнал.
+function taskBlock(t, meta, onDone) {
   if (t.b24Task) return h('p', { class: 'muted' }, t.b24Task.text);
   if (!t.permissions.canCreateTask) return h('p', { class: 'muted' }, 'Доступно для обращений в работе.');
+  const live = meta.b24Mode !== 'off';
   return h('form', { onsubmit: run(async () => {
     await post(`/tickets/${t.id}/b24-task`);
-    toast('Задача создана (имитация) — запись в журнале Битрикс24', 'success');
-  }, onDone) }, h('button', { class: 'btn btn-sm', type: 'submit' }, 'Создать задачу (имитация)'));
+    toast(live ? 'Задача отправлена в Битрикс24 — номер появится в истории' : 'Задача создана (имитация) — запись в журнале Битрикс24', 'success');
+  }, onDone) }, h('button', { class: 'btn btn-sm', type: 'submit' }, live ? 'Создать задачу в Битрикс24' : 'Создать задачу (имитация)'));
 }
 
 function inviteForm(t, meta, onDone) {
@@ -128,6 +129,6 @@ export function processingCard(t, meta, onDone) {
         open && h('div', { class: 'stack' }, h('h3', null, 'Приоритет и SLA'), priorityForm(t, meta, onDone)),
         p.canReassign && h('div', { class: 'stack' }, h('h3', null, 'Ответственный'), assignForm(t, meta, onDone)),
         p.canInvite && h('div', { class: 'stack' }, h('h3', null, 'Позвать коллегу'), inviteForm(t, meta, onDone)),
-        h('div', { class: 'stack' }, h('h3', null, 'Задача в Битрикс24'), taskBlock(t, onDone)),
+        h('div', { class: 'stack' }, h('h3', null, 'Задача в Битрикс24'), taskBlock(t, meta, onDone)),
         open && h('div', { class: 'stack' }, h('h3', null, 'Повторное обращение'), duplicateForm(t, onDone)))));
 }

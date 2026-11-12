@@ -15,7 +15,8 @@ const list = (title, items, render, empty) => h('section', { class: 'card' },
   h('h3', null, title),
   items.length === 0 ? h('p', { class: 'muted' }, empty) : h('ul', { class: 'list-plain' }, items.map(render)));
 
-export async function renderDigest(el) {
+export async function renderDigest(el, { meta }) {
+  const live = meta.b24Mode !== 'off';
   const d = await get('/digest');
   const t = d.totals;
   const textBox = h('textarea', { rows: 14, readonly: true, class: 'digest-text', 'aria-label': 'Текст сводки' }, d.text);
@@ -31,7 +32,7 @@ export async function renderDigest(el) {
   const send = async () => {
     try {
       const { recipients } = await post('/digest/send');
-      toast(`Сводка отправлена руководителям: ${recipients} (имитация, см. журнал Битрикс24)`, 'success');
+      toast(live ? `Сводка поставлена в отправку в Битрикс24, получателей: ${recipients}` : `Сводка отправлена руководителям: ${recipients} (имитация, см. журнал Битрикс24)`, 'success');
     } catch (err) { toast(err.message, 'error'); }
   };
   mount(el,
@@ -53,9 +54,11 @@ export async function renderDigest(el) {
         h('a', { href: `#/t/${x.id}` }, h('span', { class: 't-code' }, x.code), ' ', x.title), h('span', { class: 'chip' }, `голосов: ${x.votes}`)), 'Голосов пока нет')),
     h('section', { class: 'card digest-share' },
       h('h3', null, 'Текст для рассылки'),
-      h('p', { class: 't-sub' }, 'Можно вставить в письмо или чат. Кнопка «Разослать» в MVP записывает отправку в журнал имитации Битрикс24.'),
+      h('p', { class: 't-sub' }, live
+        ? 'Можно вставить в письмо или чат. Кнопка «Разослать» отправляет сводку руководителям уведомлением в Битрикс24.'
+        : 'Можно вставить в письмо или чат. Кнопка «Разослать» в MVP записывает отправку в журнал имитации Битрикс24.'),
       textBox,
       h('div', { class: 'row' },
         h('button', { class: 'btn', onclick: copy }, 'Скопировать текст'),
-        h('button', { class: 'btn btn-primary', onclick: send }, 'Разослать руководителям (имитация)'))));
+        h('button', { class: 'btn btn-primary', onclick: send }, live ? 'Разослать руководителям в Битрикс24' : 'Разослать руководителям (имитация)'))));
 }

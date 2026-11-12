@@ -61,16 +61,16 @@ test('черновик обращения восстанавливается и 
   await expect(page.getByLabel('Кратко, о чём обращение')).toHaveValue('');
 });
 
-test('шаблон ответа и задача в Битрикс24 (имитация)', async ({ page }) => {
+test('шаблон ответа и задача в Битрикс24 (демо-портал)', async ({ page }) => {
   await loginAs(page, 'Ответственный за договоры');
   await openTicket(page, 'A-009');
   await page.getByLabel('Шаблон ответа').selectOption({ label: 'Принято в работу' });
   await expect(page.getByPlaceholder('Комментарий для автора')).toHaveValue(/Спасибо за обращение/);
 
   await page.locator('.more-actions summary').click();
-  await page.getByRole('button', { name: 'Создать задачу (имитация)' }).click();
-  await expect(page.locator('.timeline')).toContainText('Создана задача в Битрикс24');
-  await expect(page.getByRole('button', { name: 'Создать задачу (имитация)' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Создать задачу в Битрикс24' }).click();
+  await expect(page.locator('.timeline')).toContainText('Задача отправлена в Битрикс24');
+  await expect(page.getByRole('button', { name: 'Создать задачу в Битрикс24' })).toHaveCount(0);
 });
 
 test('администратор меняет сроки SLA — подсказка в форме обновляется', async ({ page }) => {
