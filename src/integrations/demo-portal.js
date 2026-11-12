@@ -67,7 +67,7 @@ export function createDemoPortal() {
   const calls = [];
   let nextTaskId = 2400;
   let nextMessageId = 0;
-  const tasks = new Map(); // номер задачи → статус (коды REST Битрикс24)
+  const tasks = new Map(); // номер задачи → { status (коды REST Битрикс24), title }
 
   const page = (list, start) => {
     const from = Number(start) || 0;
@@ -77,7 +77,7 @@ export function createDemoPortal() {
 
   const b24 = {
     'department.get': () => page(departments, 0),
-    'user.get': (p) => page(users, p.start),
+    'user.get': (p) => page(p.ID ? users.filter((u) => u.ID === String(p.ID)) : users, p.start),
     'im.notify': (p) => {
       // Как настоящий портал: неизвестному или отключённому получателю — result: false без ошибки.
       if (!users.some((u) => u.ID === String(p.USER_ID) && u.ACTIVE)) return { result: false };
@@ -87,15 +87,15 @@ export function createDemoPortal() {
     'tasks.task.add': (p) => {
       if (!p.fields?.TITLE) return { error: 'ERROR_CORE', error_description: 'Не указано название задачи' };
       nextTaskId += 1;
-      tasks.set(String(nextTaskId), '2');
+      tasks.set(String(nextTaskId), { status: '2', title: String(p.fields.TITLE) });
       return { result: { task: { id: String(nextTaskId), title: p.fields.TITLE } } };
     },
     'tasks.task.get': (p) => (tasks.has(String(p.taskId))
-      ? { result: { task: { id: String(p.taskId), status: tasks.get(String(p.taskId)) } } }
+      ? { result: { task: { id: String(p.taskId), status: tasks.get(String(p.taskId)).status } } }
       : { error: 'ERROR_CORE', error_description: 'Задача не найдена или доступ запрещён' }),
     'tasks.task.complete': (p) => {
       if (!tasks.has(String(p.taskId))) return { error: 'ERROR_CORE', error_description: 'Задача не найдена или доступ запрещён' };
-      tasks.set(String(p.taskId), '5');
+      tasks.set(String(p.taskId), { ...tasks.get(String(p.taskId)), status: '5' });
       return { result: { task: { id: String(p.taskId), status: '5' } } };
     },
   };
@@ -138,6 +138,56 @@ export function createDemoPortal() {
     };
   }
 
+  const htmlPage = (title, body) => `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
+<link rel="stylesheet" href="/css/styles.css"></head><body>${body}</body></html>`;
+
+  // Форма, которой портал открывает приложение во фрейме: ключ доступа сотрудника и место встраивания.
+  // Один ключ на сотрудника портала: страница может открываться сколько угодно раз, память не растёт.
+  const userTokens = new Map();
+  const tokenFor = (user) => {
+    const known = userTokens.get(user.ID);
+    if (known && tokens.has(known)) return known;
+    const fresh = grant(tokens, user.ID);
+    userTokens.set(user.ID, fresh);
+    return fresh;
+  };
+  const appForm = (user, placement, options, label, cls) => {
+    const fields = {
+      AUTH_ID: tokenFor(user), AUTH_EXPIRES: '3600', REFRESH_ID: randomBytes(16).toString('hex'),
+      member_id: 'demo', status: 'L', LANG: 'ru', PLACEMENT: placement, PLACEMENT_OPTIONS: JSON.stringify(options),
+    };
+    const hidden = Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${escapeHtml(v)}">`).join('');
+    return `<form method="post" action="/api/auth/b24/app" target="app">${hidden}<button class="${cls}">${escapeHtml(label)}</button></form>`;
+  };
+
+  // Главная демо-портала: сотрудник «вошёл в портал» и открывает систему пунктом левого меню
+  // или вкладкой в задаче — так, как это выглядит в облачном Битрикс24 после установки приложения.
+  function portalHome(params) {
+    const user = users.find((u) => u.ID === String(params.user) && u.ACTIVE);
+    if (!user) {
+      const cards = users.filter((u) => u.ACTIVE).map((u) =>
+        `<a class="user-card" href="${DEMO_PORTAL_PREFIX}/b24/?user=${u.ID}"><b>${escapeHtml(u.NAME)}</b><span>${escapeHtml(deptName.get(u.UF_DEPARTMENT[0]) ?? '')}</span></a>`).join('');
+      return htmlPage('Демо-портал Битрикс24', `<main class="login demo-oauth"><h1>Демо-портал Битрикс24</h1>
+<p class="login-note">Имитация облачного портала: «Голос сотрудника» открывается в нём пунктом левого меню и вкладкой в задаче, без отдельного входа. Выберите, кто вошёл в портал:</p>
+<div class="user-grid">${cards}</div></main>`);
+    }
+    const taskForms = [...tasks].map(([id, task]) =>
+      `<li>${appForm(user, 'TASK_VIEW_TAB', { taskId: id }, `Задача №${id}: ${task.title} — вкладка «Обращение»`, 'btn btn-ghost btn-sm')}</li>`).join('');
+    return htmlPage('Демо-портал Битрикс24', `<main class="demo-portal">
+<header class="demo-portal-head"><b>Демо-портал Битрикс24</b>
+<span>Вы в портале: ${escapeHtml(user.NAME)} · <a href="${DEMO_PORTAL_PREFIX}/b24/">сменить</a></span></header>
+<div class="demo-portal-body">
+<nav class="demo-portal-nav" aria-label="Меню портала">
+<span class="t-sub">Живая лента</span><span class="t-sub">Задачи и проекты</span><span class="t-sub">Сотрудники</span>
+${appForm(user, 'LEFT_MENU', {}, 'Голос сотрудника', 'btn btn-primary btn-sm')}
+<h2>Задачи портала</h2>
+${taskForms ? `<ul class="list-plain">${taskForms}</ul>` : '<p class="t-sub">Задач пока нет: создайте задачу из карточки обращения.</p>'}
+</nav>
+<iframe name="app" title="Приложение «Голос сотрудника» в портале"></iframe>
+</div></main>`);
+  }
+
   function token(params) {
     const userId = params.client_id === DEMO_CLIENT_ID && params.client_secret === DEMO_CLIENT_SECRET
       && params.grant_type === 'authorization_code' ? codes.get(String(params.code)) : undefined;
@@ -164,6 +214,10 @@ export function createDemoPortal() {
       }
       res.writeHead(page.status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return res.end(page.html);
+    }
+    if (path === '/b24/') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY' });
+      return res.end(portalHome(params));
     }
     if (path === '/b24/oauth/token/') {
       record({ system: 'b24', method: 'oauth.token' });

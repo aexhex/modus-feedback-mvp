@@ -7,14 +7,16 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fetchJson, IntegrationError } from './clients.js';
 
-export const STATE_COOKIE = 'b24_state';
+// По HTTPS — префикс __Host-: такую cookie нельзя подложить с соседнего поддомена (браузер требует
+// Secure и Path=/), поэтому чужой state не подменит вход. По HTTP (демо, локальная сеть) — обычная.
+export const stateCookieName = (secure) => (secure ? '__Host-b24_state' : 'b24_state');
 const STATE_TTL_S = 600;
 
 export const newState = () => randomBytes(24).toString('hex');
 
 // SameSite=Lax: портал возвращает сотрудника обычным переходом с другого сайта, Strict-cookie он бы не принёс.
 export const stateCookie = (value, secure) =>
-  `${STATE_COOKIE}=${value}; Path=/api/auth/b24/; HttpOnly; SameSite=Lax; Max-Age=${value ? STATE_TTL_S : 0}${secure ? '; Secure' : ''}`;
+  `${stateCookieName(secure)}=${value}; Path=${secure ? '/' : '/api/auth/b24/'}; HttpOnly; SameSite=Lax; Max-Age=${value ? STATE_TTL_S : 0}${secure ? '; Secure' : ''}`;
 
 export function stateMatches(expected, received) {
   if (typeof expected !== 'string' || typeof received !== 'string' || !expected || expected.length !== received.length) return false;
@@ -43,7 +45,15 @@ export async function b24UserByCode(sso, endpoints, code) {
   if (hostOf(body.client_endpoint) !== endpoints.domain) {
     throw new IntegrationError(`Битрикс24 OAuth: токен выдан другим порталом (${hostOf(body.client_endpoint)})`);
   }
-  const me = await fetchJson(`${endpoints.rest}user.current.json?auth=${encodeURIComponent(body.access_token)}`, {
+  return b24UserByToken(endpoints, body.access_token);
+}
+
+/**
+ * Ключ доступа сотрудника → { id, active }. Ключ проверяет сам портал компании (адрес из настроек,
+ * а не из запроса): ключ другого портала здесь недействителен.
+ */
+export async function b24UserByToken(endpoints, accessToken) {
+  const me = await fetchJson(`${endpoints.rest}user.current.json?auth=${encodeURIComponent(accessToken)}`, {
     headers: { accept: 'application/json' },
   });
   const id = Number(me.body?.result?.ID);

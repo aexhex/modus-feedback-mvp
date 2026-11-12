@@ -41,8 +41,22 @@ function group(title, items, render) {
     h('ul', { class: 'list-plain' }, items.map((item) => h('li', null, render(item)))));
 }
 
-function orgPreview(p, applyBtn) {
-  const empty = p.linked.length + p.created.length + p.moved.length + p.dismissed.length === 0;
+// Сотрудник, которого система не связала сама: администратор выбирает его на портале.
+function manualLink(u, refresh) {
+  if (u.candidates.length === 0) return h('li', null, h('b', null, u.name), ` — ${t('на портале нет сотрудника с таким ФИО')}`);
+  const select = h('select', { 'aria-label': `${t('Сотрудник портала для')} ${u.name}` },
+    u.candidates.map((c) => h('option', { value: c.b24Id }, `${c.name} — ${t(c.department)} · ID ${c.b24Id}`)));
+  const btn = h('button', { class: 'btn btn-sm' }, 'Связать');
+  btn.onclick = busy(btn, async () => {
+    const r = await post('/admin/integrations/b24/link', { userId: u.userId, b24Id: Number(select.value) });
+    toast(`${r.name}: ${t('связан с Битрикс24')} (ID ${r.b24Id})`, 'success');
+    await refresh();
+  });
+  return h('li', { class: 'manual-link' }, h('b', null, u.name), select, btn);
+}
+
+function orgPreview(p, applyBtn, refresh) {
+  const empty = p.linked.length + p.created.length + p.moved.length + p.dismissed.length + (p.notLinked?.length ?? 0) === 0;
   return h('div', { class: 'sync-preview', role: 'region', 'aria-label': 'Изменения из Битрикс24' },
     h('p', { class: 't-sub' }, `${t('На портале')}: ${p.portalUsers} ${t('сотрудников')}, ${p.departments} ${t('подразделений')}`),
     empty ? h('p', null, 'Изменений нет — данные совпадают с порталом.') : [
@@ -55,8 +69,8 @@ function orgPreview(p, applyBtn) {
         : group('Уволены — будут отключены, их обращения перейдут резервным', p.dismissed, (name) => name),
       p.notLinked?.length > 0 && h('div', { class: 'sync-group' },
         h('b', null, `${t('Не связаны автоматически')}: ${p.notLinked.length}`),
-        h('p', { class: 't-sub' }, p.notLinked.join(', ')),
-        h('p', { class: 't-sub' }, 'Администраторы и одинаковые ФИО на портале по имени не связываются: связь открывает вход через Битрикс24. Администратора связывает переменная ADMIN_B24_ID.')),
+        h('p', { class: 't-sub' }, 'Администраторы и одинаковые ФИО на портале по имени не связываются: связь открывает вход через Битрикс24. Выберите сотрудника портала вручную.'),
+        h('ul', { class: 'list-plain' }, p.notLinked.map((u) => manualLink(u, refresh)))),
       applyBtn,
     ]);
 }
@@ -71,13 +85,15 @@ function b24Block(info, reload) {
     reload();
   });
   const loadBtn = h('button', { class: 'btn', disabled: info.b24.mode === 'off' }, 'Загрузить оргструктуру');
-  loadBtn.onclick = busy(loadBtn, async () => {
-    preview.replaceChildren(orgPreview(await post('/admin/integrations/b24/org-preview'), applyBtn));
-  });
+  const refresh = async () => {
+    preview.replaceChildren(orgPreview(await post('/admin/integrations/b24/org-preview'), applyBtn, refresh));
+  };
+  loadBtn.onclick = busy(loadBtn, refresh);
   const s = info.outbox;
   return h('div', { class: 'integration' },
     h('div', { class: 'row' }, h('h4', null, 'Битрикс24'), modeBadge(info.b24.mode), info.b24.host && h('code', null, info.b24.host)),
     h('p', { class: 't-sub' }, MODE_HINTS.b24[info.b24.mode]),
+    info.sso?.mode === 'demo' && h('p', null, h('a', { href: '/demo-portal/b24/', target: '_blank', rel: 'noopener' }, 'Открыть демо-портал: система внутри Битрикс24 →')),
     h('ul', { class: 'list-plain' },
       h('li', null, `${t('Сотрудников связано с порталом')}: ${info.linkedUsers}`),
       h('li', null, `${t('Отправлено')}: ${s.sent ?? 0} · ${t('В очереди')}: ${(s.pending ?? 0) + (s.sending ?? 0)} · ${t('Ошибка')}: ${s.failed ?? 0} · ${t('Не отправлено')}: ${s.skipped ?? 0}`)),

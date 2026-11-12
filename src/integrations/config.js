@@ -66,8 +66,15 @@ export function resolveEndpoints(config, selfBase) {
     // Вход: страница согласия открывается в браузере пользователя (у демо — относительный адрес,
     // чтобы работал и по IP в локальной сети), обмен кода и user.current — с сервера.
     sso: config.sso.mode === 'live'
-      ? { authorize: `${config.sso.portal}/oauth/authorize/`, token: B24_OAUTH_SERVER, rest: `${config.sso.portal}/rest/`, domain: new URL(config.sso.portal).host }
-      : { authorize: `${DEMO_PORTAL_PREFIX}/b24/oauth/authorize/`, token: `${demoBase}/b24/oauth/token/`, rest: `${demoBase}/b24/rest/`, domain: new URL(selfBase).host },
+      ? {
+        authorize: `${config.sso.portal}/oauth/authorize/`, token: B24_OAUTH_SERVER, rest: `${config.sso.portal}/rest/`,
+        domain: new URL(config.sso.portal).host, origin: config.sso.portal,
+      }
+      // Демо-портал — на этом же сервере: его страница и система имеют один адрес (origin: null — свой).
+      : {
+        authorize: `${DEMO_PORTAL_PREFIX}/b24/oauth/authorize/`, token: `${demoBase}/b24/oauth/token/`, rest: `${demoBase}/b24/rest/`,
+        domain: new URL(selfBase).host, origin: null,
+      },
   };
 }
 
