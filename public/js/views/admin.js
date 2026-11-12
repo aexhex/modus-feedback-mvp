@@ -116,7 +116,7 @@ function demoCard() {
 export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
   const [categories, users, outbox, sla, templates, holidays, auditLog, targets, integrations] = await Promise.all([
     get('/admin/categories'), get('/admin/users'), get('/admin/outbox'), get('/admin/sla'),
-    get('/admin/templates'), get('/admin/holidays'), get('/admin/audit'), get('/admin/targets'), get('/admin/integrations'),
+    get('/admin/templates'), get('/admin/calendar'), get('/admin/audit'), get('/admin/targets'), get('/admin/integrations'),
   ]);
   const staff = users.filter((u) => u.role !== 'employee' && u.isActive);
   const reload = async () => { await refreshMeta(); rerender(); };
@@ -128,7 +128,7 @@ export async function renderAdmin(el, { me, meta, rerender, refreshMeta }) {
     usersAdminCard(users, me, reload),
     h('div', { class: 'an-grid admin-pair' }, slaCard(sla, reload), holidaysCard(holidays, reload)),
     targetsCard(targets, reload),
-    integrationsCard(integrations, reload),
+    integrationsCard(integrations, reload, outbox.filter((o) => o.channel === 'email')),
     templatesCard(templates, reload),
-    h('div', { class: 'an-grid admin-pair' }, outboxCard(outbox, integrations, reload), auditCard(auditLog)));
+    h('div', { class: 'an-grid admin-pair' }, outboxCard(outbox.filter((o) => o.channel === 'bitrix24'), integrations, reload), auditCard(auditLog)));
 }

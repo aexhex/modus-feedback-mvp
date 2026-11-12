@@ -7,6 +7,7 @@ import { inTransaction } from '../db.js';
 import { HttpError } from '../http.js';
 import { updateUser } from '../admin.js';
 import { requeueUnlinked } from './delivery.js';
+import { parseContacts } from '../contacts.js';
 
 const REQUEUE_WINDOW_MS = 24 * 3600 * 1000;
 // Если портал вернул подозрительно мало сотрудников (урезанные права вебхука, сбой), массово
@@ -15,6 +16,23 @@ const MAX_DISMISS_SHARE = 0.3;
 
 const fullName = (u) => `${u.NAME ?? ''} ${u.LAST_NAME ?? ''}`.replace(/\s+/g, ' ').trim();
 const isActive = (u) => u.ACTIVE === true || u.ACTIVE === 'Y' || u.ACTIVE === '1';
+
+// Рабочие контакты из профиля портала. Неверное значение (например, телефон с буквами) пропускается,
+// а не останавливает всю загрузку.
+function portalContacts(u) {
+  const pick = (field, value) => {
+    try {
+      return parseContacts({ [field]: value ?? '' })[field];
+    } catch {
+      return null;
+    }
+  };
+  return {
+    position: pick('position', u.WORK_POSITION),
+    email: pick('email', u.EMAIL),
+    phone: pick('phone', u.WORK_PHONE || u.PERSONAL_MOBILE),
+  };
+}
 
 async function loadPortal(webhookUrl) {
   const [departments, users] = await Promise.all([b24List(webhookUrl, 'department.get'), b24List(webhookUrl, 'user.get')]);
@@ -27,6 +45,7 @@ async function loadPortal(webhookUrl) {
       department: deptName.get(String((u.UF_DEPARTMENT ?? [])[0])) || 'Без подразделения',
       active: isActive(u),
       isHead: heads.has(String(u.ID)),
+      contacts: portalContacts(u),
     }))
     .filter((p) => Number.isInteger(p.b24Id) && p.name.length >= 2);
   return { departments: departments.length, people };
@@ -42,6 +61,7 @@ function plan(db, portal) {
   const seen = new Set();
   const skipped = new Map(); // id в системе → { пользователь, кандидаты с портала с тем же ФИО }
   const link = [];
+  const contacts = [];
   const update = [];
   const create = [];
   for (const p of portal.people) {
@@ -66,6 +86,7 @@ function plan(db, portal) {
       continue;
     }
     seen.add(local.id);
+    if (p.active) contacts.push({ id: local.id, ...p.contacts });
     if (!local.b24_id) link.push({ id: local.id, name: local.name, b24Id: p.b24Id });
     if (local.is_active && p.active && local.department !== p.department) {
       update.push({ id: local.id, name: local.name, from: local.department, to: p.department });
@@ -79,7 +100,7 @@ function plan(db, portal) {
   const activeLocal = locals.filter((u) => u.is_active).length;
   const dismissCount = update.filter((u) => u.dismiss).length;
   const suspicious = portal.people.length === 0 || dismissCount > Math.max(2, activeLocal * MAX_DISMISS_SHARE);
-  return { departments: portal.departments, portalUsers: portal.people.length, link, update, create, suspicious, skipped: [...skipped.values()] };
+  return { departments: portal.departments, portalUsers: portal.people.length, link, update, create, suspicious, skipped: [...skipped.values()], contacts };
 }
 
 export async function previewOrgSync(db, webhookUrl) {
@@ -146,13 +167,19 @@ export async function applyOrgSync(db, webhookUrl, actor, nowIso) {
   return inTransaction(db, () => {
     const warnings = [];
     for (const l of p.link) db.prepare('UPDATE users SET b24_id = ? WHERE id = ?').run(l.b24Id, l.id);
+    // Контакты из портала заполняют пустые и обновляют изменившиеся; пустое на портале не стирает введённое вручную.
+    for (const c of p.contacts) {
+      db.prepare(`UPDATE users SET position = COALESCE(?, position), email = COALESCE(?, email), phone = COALESCE(?, phone)
+                  WHERE id = ?`).run(c.position, c.email, c.phone, c.id);
+    }
     let created = 0;
     for (const c of p.create) {
       if (db.prepare('SELECT 1 FROM users WHERE name = ?').get(c.name)) {
         warnings.push(`${c.name}: в системе уже есть пользователь с таким именем — свяжите вручную`);
         continue;
       }
-      db.prepare('INSERT INTO users (name, role, department, b24_id) VALUES (?, ?, ?, ?)').run(c.name, c.role, c.department, c.b24Id);
+      db.prepare('INSERT INTO users (name, role, department, b24_id, position, email, phone) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(c.name, c.role, c.department, c.b24Id, c.contacts.position, c.contacts.email, c.contacts.phone);
       created += 1;
     }
     let moved = 0;

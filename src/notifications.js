@@ -2,7 +2,8 @@
 // (виден администратору в «Настройках»), откуда его отправляет src/integrations/delivery.js.
 // Без подключения к порталу запись остаётся в журнале как имитация.
 
-const OUTBOX_LIMIT = 50;
+const OUTBOX_LIMIT = 100;
+const SUBJECT_MAX = 90;
 
 export function notify(db, { userIds, ticketId, text, actorId, now }) {
   const unique = [...new Set(userIds.filter((id) => id && id !== actorId))];
@@ -13,6 +14,11 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
     "INSERT INTO outbox (channel, method, recipient, payload, user_id, ticket_id, created_at) VALUES ('bitrix24', 'im.notify', ?, ?, ?, ?, ?)",
   );
   const nameOf = db.prepare('SELECT name FROM users WHERE id = ?');
+  // Письмо — только тем, у кого есть рабочая почта и кто не отключил письма. Адрес берётся при отправке.
+  const wantsMail = db.prepare("SELECT 1 FROM users WHERE id = ? AND is_active = 1 AND email_notify = 1 AND COALESCE(email, '') != ''");
+  const toMail = db.prepare(
+    "INSERT INTO outbox (channel, method, recipient, payload, user_id, ticket_id, created_at) VALUES ('email', 'mail.send', ?, ?, ?, ?, ?)",
+  );
   // Журнал виден администратору. У анонимного обращения скрыты все получатели, а не только автор:
   // если бы скрывалось одно имя, его можно было бы вычислить по разнице с остальными.
   const ticket = ticketId ? db.prepare('SELECT is_anonymous FROM tickets WHERE id = ?').get(ticketId) : null;
@@ -20,7 +26,12 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
   for (const userId of unique) {
     insert.run(userId, ticketId, text, now);
     const recipient = hideAll ? 'Получатель скрыт (анонимное обращение)' : (nameOf.get(userId)?.name ?? `user:${userId}`);
-    toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: ticketId ? `/#/t/${ticketId}` : '/#/home' }), userId, ticketId ?? null, now);
+    const link = ticketId ? `/#/t/${ticketId}` : '/#/home';
+    toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: link }), userId, ticketId ?? null, now);
+    if (wantsMail.get(userId)) {
+      const subject = `Голос сотрудника: ${text.length > SUBJECT_MAX ? `${text.slice(0, SUBJECT_MAX - 1)}…` : text}`;
+      toMail.run(recipient, JSON.stringify({ SUBJECT: subject, MESSAGE: text, LINK: link }), userId, ticketId ?? null, now);
+    }
   }
 }
 

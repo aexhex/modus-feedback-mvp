@@ -2,7 +2,7 @@
 import {
   TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, TRANSITIONS,
 } from './config.js';
-import { forbidden, notFound, parseCookies } from './http.js';
+import { forbidden, notFound, badRequest, parseCookies, HttpError } from './http.js';
 import { canSeeAnalytics, canAdminister } from './access.js';
 import { login, logout, sessionCookie, SESSION_MAX_AGE_S } from './auth.js';
 import {
@@ -17,7 +17,7 @@ import { listCategories, listUsers, createCategory, updateCategory, createUser, 
 import { uploadAttachment, readAttachment } from './attachments.js';
 import { listNotifications, markAllRead, listOutbox } from './notifications.js';
 import { setWatching, inviteWatcher, createB24Task } from './collab.js';
-import { getSlaDays, setSla, listHolidays, setHolidays } from './settings.js';
+import { getSlaDays, setSla, listHolidays, setHolidays, listCalendar, replaceCalendarYear } from './settings.js';
 import { listTargets, setTargets } from './targets.js';
 import { listSolutions } from './solutions.js';
 import { castVote, voteSummary } from './votes.js';
@@ -33,6 +33,13 @@ import {
 import { submitClientFeedback, listClientFeedback, markClientFeedback } from './client-feedback.js';
 import { buildHome } from './home.js';
 import { registerIntegrationRoutes } from './integrations/routes.js';
+import { setContacts } from './contacts.js';
+import { fetchCalendarYear, validCalendarRequest, CALENDAR_COUNTRIES } from './integrations/calendar.js';
+
+const describeCalendar = (ctx) => {
+  const { calendar } = ctx.integrations.config;
+  return { mode: calendar.mode, host: new URL(calendar.url).host, country: calendar.country };
+};
 import { IntegrationError } from './integrations/clients.js';
 import {
   stateCookieName, newState, stateCookie, stateMatches, authorizeUrl, b24UserByCode, b24UserByToken,
@@ -166,7 +173,16 @@ export function registerRoutes(router) {
   }, { ...PUBLIC, mutate: true, form: true });
 
   // canSwitch — можно ли вернуться к выбору роли (демо); при входе только через Битрикс24 — просто «Выйти».
-  add('GET', '/api/me', ({ ctx, user }) => ({ ...user, roleLabel: ROLES[user.role], canSwitch: listLoginAllowed(ctx) }));
+  add('GET', '/api/me', ({ ctx, user }) => {
+    const mail = ctx.db.prepare('SELECT email, email_notify FROM users WHERE id = ?').get(user.id);
+    return { ...user, roleLabel: ROLES[user.role], canSwitch: listLoginAllowed(ctx), email: mail.email, emailNotify: Boolean(mail.email_notify) };
+  });
+  // Сотрудник сам решает, дублировать ли уведомления на почту.
+  add('PATCH', '/api/me/notifications', ({ ctx, user, body }) => {
+    if (typeof body.email !== 'boolean') throw badRequest('Ожидается email: true или false');
+    ctx.db.prepare('UPDATE users SET email_notify = ? WHERE id = ?').run(body.email ? 1 : 0, user.id);
+    return { emailNotify: body.email };
+  }, MUTATE);
 
   // --- Справочники ---
   add('GET', '/api/meta', ({ ctx }) => ({
@@ -356,6 +372,22 @@ export function registerRoutes(router) {
     return listHolidays(ctx.db);
   }, MUTATE);
 
+  admin('GET', '/api/admin/calendar', ({ ctx }) => ({ ...listCalendar(ctx.db), source: describeCalendar(ctx) }));
+  // Загрузка производственного календаря на год: праздники и рабочие выходные заменяют записи этого года.
+  admin('POST', '/api/admin/calendar/import', async ({ ctx, body, log }) => {
+    const { year, country } = validCalendarRequest(body, ctx.now());
+    let loaded;
+    try {
+      loaded = await fetchCalendarYear(ctx.integrations.endpoints().calendar, year, country);
+    } catch (error) {
+      if (error instanceof IntegrationError) throw new HttpError(502, error.message);
+      throw error;
+    }
+    replaceCalendarYear(ctx.db, year, loaded);
+    log('Производственный календарь загружен', `${year}, ${CALENDAR_COUNTRIES[country]}: праздников ${loaded.holidays.length}, рабочих выходных ${loaded.workdays.length}`);
+    return { ...listCalendar(ctx.db), loaded: { year, holidays: loaded.holidays.length, workdays: loaded.workdays.length } };
+  }, MUTATE);
+
   admin('GET', '/api/admin/templates', ({ ctx }) => listTemplates(ctx.db));
   admin('POST', '/api/admin/templates', ({ ctx, body, status, log }) => {
     const created = createTemplate(ctx.db, body);
@@ -377,6 +409,13 @@ export function registerRoutes(router) {
     const created = createUser(ctx.db, body);
     log('Пользователь создан', `${created.name} (${body.role})`);
     status(201);
+    return listUsers(ctx.db, { includeInactive: true, withB24: true });
+  }, MUTATE);
+  admin('PATCH', '/api/admin/users/:id/contacts', ({ ctx, params, body, log }) => {
+    const changed = setContacts(ctx.db, params.id, body);
+    if (!changed) throw notFound('Пользователь не найден');
+    const { name } = ctx.db.prepare('SELECT name FROM users WHERE id = ?').get(Number(params.id));
+    if (changed.length) log('Контакты изменены', `${name}: ${changed.join(', ')}`);
     return listUsers(ctx.db, { includeInactive: true, withB24: true });
   }, MUTATE);
   admin('PATCH', '/api/admin/users/:id', ({ ctx, user, params, body, log }) => {

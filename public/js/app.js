@@ -1,7 +1,7 @@
 // Оболочка SPA: сессия, навигация по ролям, хэш-роутер, колокольчик уведомлений.
 import { locale, langSwitch } from './i18n.js';
 import { h, mount, toast, icon, themeToggle } from './dom.js';
-import { get, getInBackground, post, del } from './api.js';
+import { get, getInBackground, post, patch, del } from './api.js';
 import { renderLogin } from './views/login.js';
 import { renderList } from './views/list.js';
 import { renderNew } from './views/new.js';
@@ -99,7 +99,21 @@ function bell() {
   const toggle = async () => {
     if (!panel.hidden) { panel.hidden = true; return; }
     const { items } = await get('/notifications');
-    mount(panel, items.length === 0
+    // Копия уведомлений на рабочую почту — по желанию сотрудника, только если почта указана.
+    const me = session.me;
+    const mailToggle = me?.email && h('label', { class: 'notif-mail' },
+      h('input', { type: 'checkbox', checked: me.emailNotify, onchange: async (e) => {
+        try {
+          await patch('/me/notifications', { email: e.target.checked });
+          me.emailNotify = e.target.checked;
+          toast(e.target.checked ? 'Уведомления будут приходить и на почту' : 'Письма отключены', 'success');
+        } catch (err) {
+          e.target.checked = !e.target.checked;
+          toast(err.message, 'error');
+        }
+      } }),
+      h('span', null, 'Дублировать на почту ', h('span', { 'data-no-i18n': '' }, me.email)));
+    mount(panel, mailToggle, items.length === 0
       ? h('div', { class: 'empty' }, 'Уведомлений пока нет')
       : items.map((n) => h('a', {
         href: n.ticket_id ? `#/t/${n.ticket_id}` : '#', class: n.is_read ? '' : 'unread',

@@ -6,7 +6,7 @@ import { inTransaction } from './db.js';
 import { notify } from './notifications.js';
 import { addEvent } from './tickets-actions.js';
 import { OVERDUE_SQL } from './tickets-query.js';
-import { getHolidays } from './settings.js';
+import { getCalendar } from './settings.js';
 
 const REASONS = Object.freeze({
   first_response: 'нет первого ответа в срок',
@@ -53,7 +53,7 @@ export function escalateOverdue(db, nowIso) {
     .all(nowIso, nowIso);
   if (overdue.length === 0) return 0;
   const managers = db.prepare("SELECT id FROM users WHERE role = 'manager' AND is_available = 1").all().map((u) => u.id);
-  const holidays = getHolidays(db);
+  const holidays = getCalendar(db);
   return inTransaction(db, () => {
     let created = 0;
     for (const row of overdue) {
