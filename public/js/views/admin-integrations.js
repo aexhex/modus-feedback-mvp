@@ -78,7 +78,19 @@ function b24Block(info, reload) {
       h('li', null, `${t('Сотрудников связано с порталом')}: ${info.linkedUsers}`),
       h('li', null, `${t('Отправлено')}: ${s.sent ?? 0} · ${t('В очереди')}: ${(s.pending ?? 0) + (s.sending ?? 0)} · ${t('Ошибка')}: ${s.failed ?? 0} · ${t('Не отправлено')}: ${s.skipped ?? 0}`)),
     h('p', { class: 't-sub' }, 'Оргструктура: сотрудники, подразделения и их руководители. Сначала показываются изменения, применяются после подтверждения.'),
-    loadBtn, preview);
+    loadBtn, preview, tasksBtn(info));
+}
+
+// Статусы задач проверяются автоматически раз в 5 минут; кнопка — чтобы не ждать.
+function tasksBtn(info) {
+  const btn = h('button', { class: 'btn btn-sm', disabled: info.b24.mode === 'off' }, 'Проверить статусы задач');
+  btn.onclick = busy(btn, async () => {
+    const r = await post('/admin/integrations/b24/tasks-check');
+    toast(`${t('Проверено задач')}: ${r.checked}, ${t('изменилось')}: ${r.changed}${r.errors ? `, ${t('ошибок')}: ${r.errors}` : ''}`, 'success');
+  });
+  return h('div', { class: 'stack' },
+    h('p', { class: 't-sub' }, 'Статусы задач Битрикс24 проверяются раз в 5 минут: когда задачу завершат, ответственный получит уведомление зафиксировать итог.'),
+    btn);
 }
 
 function exportBlock(info) {

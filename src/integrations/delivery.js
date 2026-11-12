@@ -5,6 +5,7 @@
 // Без подключения к порталу записи помечаются simulated — журнал показывает, что ушло бы.
 import { b24Call, IntegrationError } from './clients.js';
 import { addEvent } from '../tickets-actions.js';
+import { recordTask } from './b24-tasks.js';
 
 export const MAX_ATTEMPTS = 5;
 const RETRY_BASE_MS = 30_000;
@@ -46,6 +47,7 @@ function onTaskCreated(db, row, taskId, nowIso) {
     ticketId: row.ticket_id, actorId: null, kind: 'b24_task', at: nowIso,
     body: `Задача в Битрикс24 №${taskId} создана`,
   });
+  recordTask(db, row.ticket_id, taskId, nowIso);
 }
 
 /**
