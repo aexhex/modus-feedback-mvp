@@ -1,5 +1,6 @@
 // Настройки, вынесенные из кода в интерфейс: шаблоны ответов, праздники, пользователи, журнал действий.
 import { h, toast, options } from '../dom.js';
+import { locale } from '../i18n.js';
 import { post, patch, del } from '../api.js';
 import { filePicker } from '../dom.js';
 
@@ -114,6 +115,6 @@ export function auditCard(entries) {
     entries.length === 0 ? h('p', { class: 'muted' }, 'Изменений пока не было')
       : h('ul', { class: 'list-plain audit-list' }, entries.map((a) => h('li', null,
         h('b', null, a.action), a.details && ` — ${a.details}`,
-        h('div', { class: 't-sub' }, `${a.actorName ?? 'Система'} · ${new Date(a.createdAt).toLocaleString('ru-RU')}`)))));
+        h('div', { class: 't-sub' }, `${a.actorName ?? 'Система'} · ${new Date(a.createdAt).toLocaleString(locale())}`)))));
 }
 
