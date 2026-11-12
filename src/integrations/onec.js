@@ -76,19 +76,27 @@ export function checkExportToken(expected, header) {
 /**
  * Обращения для анализа в 1С. Без текста и без автора: только классификация, сроки и клиент.
  * У анонимных обращений подразделение скрыто так же, как в интерфейсе.
+ * changedAt — время последнего изменения с учётом новых «У меня тоже» (они не меняют updated_at),
+ * по нему работает since. Объединённые дубликаты тоже выгружаются, с duplicateOf: так 1С узнаёт,
+ * что ранее загруженную запись нужно исключить из анализа.
  */
+const CHANGED_AT = `MAX(t.updated_at, COALESCE((SELECT MAX(s.created_at) FROM supports s WHERE s.ticket_id = t.id), ''))`;
+
 export function exportForOnec(db, query = {}) {
   const since = typeof query.since === 'string' && !Number.isNaN(Date.parse(query.since)) ? new Date(query.since).toISOString() : null;
   const rows = db
     .prepare(
-      `SELECT t.code, t.type, t.status, t.priority, t.is_anonymous, t.department, t.created_at, t.updated_at,
-              t.first_response_at, t.resolved_at, t.due_at, c.name AS category,
-              k.ref_key AS cp_ref, k.code AS cp_code, k.inn AS cp_inn, k.name AS cp_name,
-              (SELECT COUNT(*) FROM supports s WHERE s.ticket_id = t.id) AS supporters
-       FROM tickets t JOIN categories c ON c.id = t.category_id
-       LEFT JOIN counterparties k ON k.id = t.counterparty_id
-       WHERE t.duplicate_of IS NULL ${since ? 'AND t.updated_at >= ?' : ''}
-       ORDER BY t.updated_at, t.id LIMIT ?`,
+      `SELECT * FROM (
+         SELECT t.code, t.type, t.status, t.priority, t.is_anonymous, t.department, t.created_at, t.updated_at,
+                t.first_response_at, t.resolved_at, t.due_at, c.name AS category, d.code AS duplicate_of,
+                k.ref_key AS cp_ref, k.code AS cp_code, k.inn AS cp_inn, k.name AS cp_name,
+                (SELECT COUNT(*) FROM supports s WHERE s.ticket_id = t.id) AS supporters,
+                ${CHANGED_AT} AS changed_at, t.id AS id
+         FROM tickets t JOIN categories c ON c.id = t.category_id
+         LEFT JOIN tickets d ON d.id = t.duplicate_of
+         LEFT JOIN counterparties k ON k.id = t.counterparty_id
+       ) ${since ? 'WHERE changed_at >= ?' : ''}
+       ORDER BY changed_at, id LIMIT ?`,
     )
     .all(...(since ? [since] : []), EXPORT_LIMIT);
   return rows.map((r) => ({
@@ -100,8 +108,10 @@ export function exportForOnec(db, query = {}) {
     status: r.status,
     statusLabel: STATUSES[r.status],
     priority: r.priority,
+    duplicateOf: r.duplicate_of ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    changedAt: r.changed_at,
     firstResponseAt: r.first_response_at,
     resolvedAt: r.resolved_at,
     dueAt: r.due_at,

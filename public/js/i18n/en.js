@@ -930,4 +930,6 @@ export default {
   "Сводка поставлена в отправку в Битрикс24, получателей: {1}": "Digest queued for Bitrix24, recipients: {1}",
   "Создать задачу в Битрикс24": "Create a Bitrix24 task",
   "С портала пришло подозрительно мало сотрудников — отключение уволенных пропущено, проверьте права вебхука": "The portal returned suspiciously few employees — dismissals were skipped, check the webhook permissions",
+  "Битрикс24 im.notify: уведомление не создано — получатель не найден или отключён": "Bitrix24 im.notify: notification not created — recipient not found or deactivated",
+  "Битрикс24 tasks.task.add: портал не вернул номер задачи": "Bitrix24 tasks.task.add: the portal returned no task number",
 };
