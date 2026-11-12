@@ -23,7 +23,7 @@ function categoriesCard(categories, staff, reload) {
   return h('section', { class: 'card' },
     h('h3', null, 'Категории и маршрутизация'),
     h('p', { class: 't-sub' }, 'Обращение получает основной ответственный. Если он отсутствует — резервный, иначе руководитель-диспетчер.'),
-    h('table', { class: 'table', style: { marginTop: '12px' } },
+    h('table', { class: 'table routing-table', style: { marginTop: '12px' } },
       h('thead', null, h('tr', null, ['Категория', 'Основной', 'Резервный', 'Обращений', 'Активна'].map((c) => h('th', null, c)))),
       h('tbody', null, categories.map((c) => h('tr', { style: { cursor: 'default' } },
         h('td', null, h('b', null, c.name)),

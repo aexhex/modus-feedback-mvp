@@ -1,6 +1,6 @@
 // Настройки, вынесенные из кода в интерфейс: шаблоны ответов, праздники, пользователи, журнал действий.
 import { h, toast, options } from '../dom.js';
-import { locale } from '../i18n.js';
+import { locale, t } from '../i18n.js';
 import { post, patch, del } from '../api.js';
 import { filePicker } from '../dom.js';
 
@@ -60,6 +60,15 @@ export function usersAdminCard(users, me, reload) {
       onchange: (e) => save(u, { role: e.target.value }, `${u.name}: роль изменена`)() }, options(ROLE_OPTIONS));
     const department = h('input', { type: 'text', value: u.department, maxlength: 80, 'aria-label': `Подразделение: ${u.name}`,
       onchange: (e) => save(u, { department: e.target.value }, `${u.name}: подразделение изменено`)() });
+    // Связь с Битрикс24 открывает вход через портал; ошибочную связь администратор снимает здесь.
+    const unlink = () => {
+      if (!window.confirm(`${u.name}: ${t('отвязать от Битрикс24? Этот человек больше не сможет входить через портал под этой учётной записью, его открытые сессии закроются.')}`)) return;
+      guarded(() => post('/admin/integrations/b24/unlink', { userId: u.id }), reload, `${u.name}: ${t('отвязан от Битрикс24')}`)();
+    };
+    const b24 = u.b24Id
+      ? h('div', { class: 'b24-link' }, h('span', { class: 't-sub' }, `ID ${u.b24Id}`),
+        !isSelf && h('button', { class: 'btn btn-ghost btn-sm', type: 'button', 'aria-label': `${t('Отвязать от Битрикс24')}: ${u.name}`, onclick: unlink }, 'Отвязать'))
+      : h('span', { class: 't-sub' }, '—');
     return h('tr', { class: u.isActive ? '' : 'user-off' },
       h('td', null, h('b', null, u.name), isSelf && h('span', { class: 'chip' }, 'это вы')),
       h('td', null, role),
@@ -67,7 +76,8 @@ export function usersAdminCard(users, me, reload) {
       h('td', null, h('input', { type: 'checkbox', checked: u.isAvailable, disabled: isSelf || !u.isActive, 'aria-label': `На месте: ${u.name}`,
         onchange: (e) => save(u, { isAvailable: e.target.checked }, `${u.name}: ${e.target.checked ? 'на месте' : 'отсутствует'}`)() })),
       h('td', null, h('input', { type: 'checkbox', checked: u.isActive, disabled: isSelf, 'aria-label': `Доступ: ${u.name}`,
-        onchange: (e) => save(u, { isActive: e.target.checked }, `${u.name}: ${e.target.checked ? 'доступ включён' : 'доступ отключён'}`)() })));
+        onchange: (e) => save(u, { isActive: e.target.checked }, `${u.name}: ${e.target.checked ? 'доступ включён' : 'доступ отключён'}`)() })),
+      h('td', null, b24));
   };
   const name = h('input', { type: 'text', maxlength: 80, required: true, placeholder: 'Имя или должность' });
   const role = h('select', { 'aria-label': 'Роль' }, options(ROLE_OPTIONS));
@@ -76,7 +86,7 @@ export function usersAdminCard(users, me, reload) {
     h('h3', null, 'Пользователи и роли'),
     h('p', { class: 't-sub' }, '«На месте» — участвует в маршрутизации (снимите на время отпуска). «Доступ» — может ли входить в систему.'),
     h('div', { class: 'table-scroll' }, h('table', { class: 'table users-table' },
-      h('thead', null, h('tr', null, ['Пользователь', 'Роль', 'Подразделение', 'На месте', 'Доступ'].map((c) => h('th', null, c)))),
+      h('thead', null, h('tr', null, ['Пользователь', 'Роль', 'Подразделение', 'На месте', 'Доступ', 'Битрикс24'].map((c) => h('th', null, c)))),
       h('tbody', null, users.map(row)))),
     h('form', { class: 'row user-new', onsubmit: guarded(() => post('/admin/users', { name: name.value, role: role.value, department: department.value }), reload, 'Пользователь добавлен') },
       h('div', { class: 'grow' }, name), role, h('div', { class: 'grow' }, department),

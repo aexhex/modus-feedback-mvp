@@ -372,22 +372,22 @@ export function registerRoutes(router) {
     return listTemplates(ctx.db);
   }, MUTATE);
 
-  admin('GET', '/api/admin/users', ({ ctx }) => listUsers(ctx.db, { includeInactive: true }));
+  admin('GET', '/api/admin/users', ({ ctx }) => listUsers(ctx.db, { includeInactive: true, withB24: true }));
   admin('POST', '/api/admin/users', ({ ctx, body, status, log }) => {
     const created = createUser(ctx.db, body);
     log('Пользователь создан', `${created.name} (${body.role})`);
     status(201);
-    return listUsers(ctx.db, { includeInactive: true });
+    return listUsers(ctx.db, { includeInactive: true, withB24: true });
   }, MUTATE);
   admin('PATCH', '/api/admin/users/:id', ({ ctx, user, params, body, log }) => {
     log('Пользователь изменён', updateUser(ctx.db, user, params.id, body, ctx.now()));
-    return listUsers(ctx.db, { includeInactive: true });
+    return listUsers(ctx.db, { includeInactive: true, withB24: true });
   }, MUTATE);
 
   admin('POST', '/api/admin/users/import', ({ ctx, body, log }) => {
     const result = importUsers(ctx.db, body);
     log('Импорт пользователей', `добавлено: ${result.created.length}, пропущено: ${result.skipped.length}`);
-    return { ...result, users: listUsers(ctx.db, { includeInactive: true }) };
+    return { ...result, users: listUsers(ctx.db, { includeInactive: true, withB24: true }) };
   }, { mutate: true, bodyLimit: 128 * 1024 });
   // Сброс удаляет все сессии, поэтому администратор после него попадает на экран входа.
   admin('POST', '/api/admin/demo-reset', ({ ctx, user, res }) => {
