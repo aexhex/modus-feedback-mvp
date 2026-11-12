@@ -9,7 +9,7 @@ import { bootstrapAdmin } from '../src/seed.js';
 import { login } from '../src/auth.js';
 import { SESSION_COOKIE } from '../src/config.js';
 import { readIntegrationConfig, resolveEndpoints } from '../src/integrations/config.js';
-import { b24UserByCode } from '../src/integrations/b24-sso.js';
+import { b24UserByCode, b24UserByAppToken } from '../src/integrations/b24-sso.js';
 import { IntegrationError } from '../src/integrations/clients.js';
 import { previewOrgSync } from '../src/integrations/b24-org.js';
 
@@ -254,10 +254,12 @@ describe('обмен кода на ID пользователя', () => {
   let base;
   let tokenReply;
   let meReply = { result: { ID: '42', ACTIVE: true } };
+  let appReply;
   before(async () => {
     server = createServer((req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
       if (req.url.startsWith('/oauth/token/')) return res.end(JSON.stringify(tokenReply));
+      if (req.url.startsWith('/rest/app.info.json')) return res.end(JSON.stringify(appReply));
       return res.end(JSON.stringify(meReply));
     });
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -267,6 +269,16 @@ describe('обмен кода на ID пользователя', () => {
 
   const endpoints = () => ({ token: `${base}/oauth/token/`, rest: `${base}/rest/`, domain: new URL(base).host });
   const sso = { clientId: 'local.abc', clientSecret: 's' };
+
+  it('ключ из окна портала принимается, только если выдан нашему приложению', async () => {
+    meReply = { result: { ID: '42', ACTIVE: true } };
+    appReply = { result: { CODE: 'local.abc' } };
+    assert.deepEqual(await b24UserByAppToken(sso, endpoints(), 't'), { id: 42, active: true });
+    appReply = { result: { CODE: 'local.other' } };
+    await assert.rejects(b24UserByAppToken(sso, endpoints(), 't'), IntegrationError);
+    appReply = { error: 'invalid_token' };
+    await assert.rejects(b24UserByAppToken(sso, endpoints(), 't'), IntegrationError);
+  });
 
   it('возвращает ID пользователя портала', async () => {
     tokenReply = { access_token: 't', client_endpoint: `${base}/rest/` };

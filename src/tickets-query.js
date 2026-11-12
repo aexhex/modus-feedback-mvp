@@ -268,26 +268,33 @@ export function getTicketDetail(db, user, id, nowIso) {
 // Похожие обращения показываем всем — без автора и текста, только тема и статус.
 // Итог рассмотрения («Уже решено») — только если пользователь может открыть обращение
 // или оно реализовано (такие итоги и так публикуются для всех в «Итогах внедрения»).
+// Чужое закрытое обращение сравнивается только по теме: подбором слов нельзя выведать его текст.
+// Тема чужого анонимного не показывается вовсе — по ней автора бывает легко узнать.
 export function similarTickets(db, user, text) {
-  const candidates = db
+  const rows = db
     .prepare(
       `SELECT t.id, t.code, t.title, t.description, t.status, t.author_id, t.assignee_id, t.is_public, t.type,
-              t.resolution, c.name AS category_name,
+              t.is_anonymous, t.resolution, c.name AS category_name,
               EXISTS (SELECT 1 FROM events e WHERE e.ticket_id = t.id AND e.to_status = 'implemented') AS was_implemented,
               (SELECT COUNT(*) FROM supports sp WHERE sp.ticket_id = t.id) AS supports_count
        FROM tickets t JOIN categories c ON c.id = t.category_id
        WHERE t.duplicate_of IS NULL AND t.type != 'praise'`,
     )
     .all();
+  const watched = new Set(db.prepare('SELECT ticket_id FROM watchers WHERE user_id = ?').all(user.id).map((w) => w.ticket_id));
+  const candidates = rows.map((r) => {
+    const canOpen = canView(user, r, watched.has(r.id));
+    return { ...r, canOpen, description: canOpen ? r.description : '' };
+  });
   const byId = new Map(candidates.map((c) => [c.id, c]));
   return findSimilar(text, candidates).map(({ id, score }) => {
     const c = byId.get(id);
-    const canOpen = canView(user, c, isWatching(db, c.id, user.id));
+    const { canOpen } = c;
     const showResult = isFinal(c.status) && c.resolution && (canOpen || c.was_implemented);
     return {
       id: c.id,
       code: c.code,
-      title: c.title,
+      title: canOpen || !c.is_anonymous ? c.title : null,
       category: c.category_name,
       status: c.status,
       statusLabel: STATUSES[c.status],

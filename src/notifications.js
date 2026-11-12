@@ -14,6 +14,8 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
     "INSERT INTO outbox (channel, method, recipient, payload, user_id, ticket_id, created_at) VALUES ('bitrix24', 'im.notify', ?, ?, ?, ?, ?)",
   );
   const nameOf = db.prepare('SELECT name FROM users WHERE id = ?');
+  // В Битрикс24 — только действующим: отключённый сотрудник не должен узнавать о ходе обращений.
+  const isActive = db.prepare('SELECT 1 FROM users WHERE id = ? AND is_active = 1');
   // Письмо — только тем, у кого есть рабочая почта и кто не отключил письма. Адрес берётся при отправке.
   const wantsMail = db.prepare("SELECT 1 FROM users WHERE id = ? AND is_active = 1 AND email_notify = 1 AND COALESCE(email, '') != ''");
   // Push — только тем, кто включил уведомления хотя бы на одном устройстве. Подписки берутся при отправке.
@@ -32,7 +34,7 @@ export function notify(db, { userIds, ticketId, text, actorId, now }) {
     insert.run(userId, ticketId, text, now);
     const recipient = hideAll ? 'Получатель скрыт (анонимное обращение)' : (nameOf.get(userId)?.name ?? `user:${userId}`);
     const link = ticketId ? `/#/t/${ticketId}` : '/#/home';
-    toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: link }), userId, ticketId ?? null, now);
+    if (isActive.get(userId)) toOutbox.run(recipient, JSON.stringify({ MESSAGE: text, LINK: link }), userId, ticketId ?? null, now);
     if (hasPush.get(userId)) toPush.run(recipient, JSON.stringify({ MESSAGE: text, LINK: link }), userId, ticketId ?? null, now);
     if (wantsMail.get(userId)) {
       const subject = `Голос сотрудника: ${text.length > SUBJECT_MAX ? `${text.slice(0, SUBJECT_MAX - 1)}…` : text}`;

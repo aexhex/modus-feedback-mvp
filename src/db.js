@@ -239,6 +239,11 @@ export function openDatabase(path) {
   ensureColumn(db, 'outbox', 'external_id', 'TEXT');
   ensureColumn(db, 'outbox', 'sent_at', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status)');
+  // Нагрузочная проверка (npm run loadtest): без этих индексов вовлечённость в отчёте и сводке
+  // просматривала все отметки «У меня тоже» для каждого сотрудника, а итоги — всю историю.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_supports_user ON supports(user_id, created_at);
+           CREATE INDEX IF NOT EXISTS idx_tickets_author_created ON tickets(author_id, created_at);
+           CREATE INDEX IF NOT EXISTS idx_events_to_status ON events(to_status)`);
   ensureColumn(db, 'tickets', 'counterparty_id', 'INTEGER REFERENCES counterparties(id)');
   return db;
 }

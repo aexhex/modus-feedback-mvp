@@ -65,9 +65,24 @@ describe('вложения', () => {
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type'), 'application/octet-stream');
     assert.equal(await res.text(), 'тестовый файл');
+    assert.equal(res.headers.get('cache-control'), 'no-store');
 
     const stranger = await app.as('Сотрудник офиса');
     assert.equal((await stranger.raw(`/api/attachments/${attId}`)).status, 404);
+  });
+
+  it('в анонимном обращении имя файла автора заменяется нейтральным', async () => {
+    const emp = await app.as('Сотрудник офиса');
+    const created = await emp.post('/api/tickets', {
+      type: 'problem', categoryId: app.db.prepare("SELECT id FROM categories WHERE name = 'Регламенты'").get().id, isAnonymous: true,
+      title: 'Анонимная проблема с файлом', description: 'Описание анонимной проблемы с файлом.',
+    });
+    const id = created.json.data.id;
+    const up = await emp.post(`/api/tickets/${id}/attachments`, file('Отчёт Сотрудник офиса.docx'));
+    assert.equal(up.json.data.name, 'Вложение 1.docx');
+    const handler = await app.as('Ответственный за процессы');
+    const ticket = (await handler.get(`/api/tickets/${id}`)).json.data;
+    assert.ok(!JSON.stringify(ticket).includes('Отчёт Сотрудник офиса'), 'исходное имя нигде не видно');
   });
 
   it('запрещённое расширение и битые данные отклоняются', async () => {

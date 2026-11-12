@@ -59,6 +59,18 @@ describe('карта повторяющихся проблем', () => {
       const spreads = problemMap.categories.map((c) => c.spread);
       assert.deepEqual(spreads, [...spreads].sort((a, b) => b - a));
       assert.equal(problemMap.max, Math.max(...problemMap.categories.flatMap((c) => c.cells)));
+
+      // Анонимное обращение не попадает в разрез по подразделениям: ячейка выдала бы отдел автора.
+      const before = (await manager.get('/api/analytics')).json.data;
+      const author = await app.as('Сотрудник бухгалтерии');
+      await author.post('/api/tickets', {
+        type: 'problem', categoryId: app.db.prepare("SELECT id FROM categories WHERE name = 'Регламенты'").get().id, isAnonymous: true,
+        title: 'Анонимная проблема для проверки карты', description: 'Описание анонимной проблемы для проверки карты.',
+      });
+      const after = (await manager.get('/api/analytics')).json.data;
+      assert.equal(after.total, before.total + 1);
+      assert.deepEqual(after.problemMap, before.problemMap);
+      assert.deepEqual(after.byDepartment, before.byDepartment);
     } finally {
       await app.close();
     }
@@ -128,5 +140,27 @@ describe('база решений и «Уже решено»', () => {
     const implementedText = encodeURIComponent('обучающие занятия по новым товарным линейкам');
     const a004 = (await stranger.get(`/api/tickets/similar?text=${implementedText}`)).json.data.find((s) => s.code === 'A-004');
     assert.ok(a004?.resolution, 'итог реализованного улучшения публичен');
+  });
+
+  it('чужое закрытое: текст не подбирается, тема анонимного скрыта, номера не перебираются', async () => {
+    const author = await app.as('Сотрудник офиса');
+    const created = await author.post('/api/tickets', {
+      type: 'problem', categoryId: categoryId(app, 'Обучение'), isAnonymous: true,
+      title: 'Наставник срывает занятия группы', description: 'Секретная подробность фиолетовыйслон закрыта от коллег.',
+    });
+    const id = created.json.data.id;
+    const stranger = await app.as('Менеджер по продажам');
+    const byText = (await stranger.get(`/api/tickets/similar?text=${encodeURIComponent('фиолетовыйслон закрыта подробность')}`)).json.data;
+    assert.ok(!byText.some((s) => s.id === id), 'по тексту чужое не находится');
+    const byTitle = (await stranger.get(`/api/tickets/similar?text=${encodeURIComponent('наставник срывает занятия группы')}`)).json.data.find((s) => s.id === id);
+    assert.equal(byTitle.title, null, 'тема анонимного скрыта');
+    assert.equal((await author.get(`/api/tickets/similar?text=${encodeURIComponent('фиолетовыйслон закрыта подробность')}`)).json.data.find((s) => s.id === id).title,
+      'Наставник срывает занятия группы', 'автор видит своё');
+    // Поддержать чужую открытую проблему можно; чужую идею — ответ как у несуществующего.
+    assert.equal((await stranger.post(`/api/tickets/${id}/support`)).status, 200);
+    const idea = await author.post('/api/tickets', {
+      type: 'idea', categoryId: categoryId(app, 'Обучение'), title: 'Закрытая идея для проверки', description: 'Описание закрытой идеи.',
+    });
+    assert.equal((await stranger.post(`/api/tickets/${idea.json.data.id}/support`)).status, 404);
   });
 });

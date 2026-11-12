@@ -2,12 +2,12 @@
 import {
   TYPES, PRIORITIES, STATUSES, TRANSITIONS, LIMITS, addBusinessHours,
 } from './config.js';
-import { canProcess, canReassign } from './access.js';
-import { badRequest, forbidden } from './http.js';
+import { canView, canProcess, canReassign } from './access.js';
+import { badRequest, forbidden, notFound } from './http.js';
 import { inTransaction } from './db.js';
 import { resolveAssignee } from './routing.js';
 import { notify } from './notifications.js';
-import { getTicketRow, getVisibleTicketRow, isFinal, watcherIds } from './tickets-query.js';
+import { getTicketRow, getVisibleTicketRow, isFinal, isWatching, watcherIds } from './tickets-query.js';
 import { getSla, getCalendarFor } from './settings.js';
 import { validCounterpartyId } from './integrations/onec.js';
 
@@ -65,7 +65,7 @@ export function createTicket(db, user, input, now) {
   return inTransaction(db, () => {
     const code = nextCode(db);
     const sla = getSla(db)[data.priority];
-    const assignment = resolveAssignee(db, data.categoryId);
+    const assignment = resolveAssignee(db, data.categoryId, { excludeId: data.isAnonymous ? user.id : null });
     const holidays = getCalendarFor(db, assignment.userId);
     const { lastInsertRowid } = db
       .prepare(
@@ -218,6 +218,11 @@ export function setPriority(db, user, id, input, now) {
 // «Поддержать» — вместо дубликата сотрудник присоединяется к существующему обращению.
 export function supportTicket(db, user, id, now) {
   const row = getTicketRow(db, id);
+  // Чужую закрытую проблему можно поддержать из «Похожих» не открывая; всё прочее, что пользователь не видит,
+  // отвечает как несуществующее — перебором номеров не узнать тип и статус чужих обращений.
+  if (!canView(user, row, isWatching(db, row.id, user.id)) && (row.type !== 'problem' || isFinal(row.status))) {
+    throw notFound('Обращение не найдено');
+  }
   // Для идей есть голосование, «у меня тоже» — только для проблем: два способа поддержки путали бы.
   if (row.type !== 'problem') throw badRequest('«У меня тоже» — для проблем. За идеи голосуют в «Идеях коллег»');
   if (row.author_id === user.id) throw badRequest('Нельзя поддержать собственное обращение');

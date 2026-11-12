@@ -18,6 +18,7 @@ test('администратор загружает оргструктуру и�
   await expect(preview).toContainText('Координатор проекта: Проектный офис → Проектирование');
   await expect(preview).toContainText('Руководитель проекта');
   await expect(preview).toContainText('Не связаны автоматически: 1');
+  await expect(preview).toContainText('Сверьте перед применением');
 
   const axe = await new AxeBuilder({ page }).include('section.card').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(axe.violations.filter((v) => ['serious', 'critical'].includes(v.impact)).map((v) => v.id)).toEqual([]);
