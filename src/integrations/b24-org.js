@@ -123,6 +123,23 @@ export async function linkUser(db, webhookUrl, userId, b24Id, nowIso) {
   return { name: user.name, b24Id: id, portalName: fullName(portalUser) };
 }
 
+/**
+ * Отвязка от портала — чтобы исправить ошибочное связывание: человек больше не входит через Битрикс24
+ * под этой учётной записью, его открытые сессии закрываются сразу.
+ */
+export function unlinkUser(db, actor, userId) {
+  const user = db.prepare('SELECT id, name, b24_id FROM users WHERE id = ?').get(Number(userId));
+  if (!user) throw new HttpError(404, 'Пользователь не найден');
+  if (!user.b24_id) throw new HttpError(409, `${user.name}: не связан с Битрикс24`);
+  // Свою связь администратор не снимает: при входе только через портал он потерял бы доступ.
+  if (user.id === actor.id) throw new HttpError(400, 'Свою связь с Битрикс24 отвязать нельзя');
+  return inTransaction(db, () => {
+    db.prepare('UPDATE users SET b24_id = NULL WHERE id = ?').run(user.id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+    return { name: user.name, b24Id: user.b24_id };
+  });
+}
+
 /** @returns {{ linked: number, created: number, moved: number, dismissed: number, warnings: string[] }} */
 export async function applyOrgSync(db, webhookUrl, actor, nowIso) {
   const p = plan(db, await loadPortal(webhookUrl));

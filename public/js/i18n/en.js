@@ -1011,4 +1011,11 @@ export default {
   'на портале нет сотрудника с таким ФИО': 'no portal employee with this full name',
   'связан с Битрикс24': 'linked to Bitrix24',
   'Связь уже изменилась — обновите предпросмотр': 'The link has already changed — refresh the preview',
+  '{1}: не связан с Битрикс24': '{1}: not linked to Bitrix24',
+  'Отвязать от Битрикс24': 'Unlink from Bitrix24',
+  'Отвязать': 'Unlink',
+  'Свою связь с Битрикс24 отвязать нельзя': 'You cannot unlink your own Bitrix24 link',
+  'Сотрудник отвязан от Битрикс24': 'Employee unlinked from Bitrix24',
+  'отвязан от Битрикс24': 'unlinked from Bitrix24',
+  'отвязать от Битрикс24? Этот человек больше не сможет входить через портал под этой учётной записью, его открытые сессии закроются.': 'unlink from Bitrix24? This person will no longer be able to sign in through the portal with this account, and their open sessions will be closed.',
 };
