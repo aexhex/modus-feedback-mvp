@@ -34,6 +34,9 @@ import { submitClientFeedback, listClientFeedback, markClientFeedback } from './
 import { buildHome } from './home.js';
 import { registerIntegrationRoutes } from './integrations/routes.js';
 
+const TASK_WAIT_MS = 3000;
+const delay = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref(); });
+
 const cookie = (token, maxAge) =>
   `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
 
@@ -124,8 +127,12 @@ export function registerRoutes(router) {
     }
   }, MUTATE);
   action('invite', inviteWatcher);
-  add('POST', '/api/tickets/:id/b24-task', ({ ctx, user, params, body }) => {
-    createB24Task(ctx.db, user, params.id, body, ctx.now(), { live: ctx.integrations.config.b24.mode !== 'off' });
+  add('POST', '/api/tickets/:id/b24-task', async ({ ctx, user, params, body }) => {
+    const live = ctx.integrations.config.b24.mode !== 'off';
+    createB24Task(ctx.db, user, params.id, body, ctx.now(), { live });
+    // Портал обычно отвечает за доли секунды: ждём немного, чтобы карточка сразу показала номер задачи.
+    // Если портал медлит, отправка продолжится в фоне, а номер появится в истории позже.
+    if (live) await Promise.race([ctx.integrations.delivery.kick(), delay(TASK_WAIT_MS)]);
     return getTicketDetail(ctx.db, user, params.id, ctx.now());
   }, MUTATE);
   action('report', saveReport);

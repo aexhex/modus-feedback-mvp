@@ -16,6 +16,7 @@ import { renderClients, renderClientForm } from './views/clients.js';
 import { renderReport } from './views/report.js';
 import { renderDigest } from './views/digest.js';
 import { renderSolutions } from './views/solutions.js';
+import { setupPwa, installButton } from './pwa.js';
 
 const NOTIFY_POLL_MS = 30_000;
 const root = document.getElementById('app');
@@ -155,6 +156,7 @@ function shell(me, path, query) {
       h('div', { class: 'side-foot' }, 'MVP · демонстрационные данные')),
     h('div', { class: 'main' },
       h('header', { class: 'topbar' },
+        installButton(),
         langSwitch(),
         themeToggle(),
         bell(),
@@ -210,6 +212,7 @@ function startPolling() {
 }
 
 window.addEventListener('hashchange', render);
+setupPwa();
 await loadSession();
 if (session.me) startPolling();
 render();
