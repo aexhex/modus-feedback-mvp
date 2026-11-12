@@ -1,4 +1,5 @@
 // Чтение обращений: список с фильтрами, карточка, доска улучшений, похожие.
+import { contactsOf } from './contacts.js';
 import {
   FINAL_STATUSES, STATUSES, TYPES, PRIORITIES, TRANSITIONS, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX,
 } from './config.js';
@@ -223,8 +224,15 @@ export function getTicketDetail(db, user, id, nowIso) {
   const counterparty = db
     .prepare('SELECT k.id, k.name, k.inn FROM counterparties k JOIN tickets t ON t.counterparty_id = k.id WHERE t.id = ?')
     .get(row.id) ?? null;
+  // Контакты ответственного видят все, кто видит обращение; контакты автора — только рассматривающие,
+  // и только у неанонимного обращения.
+  const contacts = {
+    assignee: contactsOf(db, row.assignee_id),
+    author: processor && !row.is_anonymous ? contactsOf(db, row.author_id) : null,
+  };
   return {
     ...serializeTicket(row, user, nowIso),
+    contacts,
     counterparty,
     duplicateOf,
     events,

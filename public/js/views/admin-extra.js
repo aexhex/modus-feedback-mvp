@@ -1,5 +1,5 @@
 // Настройки, вынесенные из кода в интерфейс: шаблоны ответов, праздники, пользователи, журнал действий.
-import { h, toast, options } from '../dom.js';
+import { h, toast, options, field } from '../dom.js';
 import { locale, t } from '../i18n.js';
 import { post, patch, del } from '../api.js';
 import { filePicker } from '../dom.js';
@@ -43,13 +43,37 @@ export function templatesCard(templates, reload) {
       h('div', null, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Добавить шаблон'))));
 }
 
-export function holidaysCard(dates, reload) {
-  const input = h('textarea', { rows: 8, class: 'mono', 'aria-label': 'Праздничные дни' }, dates.join('\n'));
+const COUNTRIES = [{ key: 'ru', label: 'Россия' }, { key: 'kz', label: 'Казахстан' }];
+const lines = (el) => el.value.split('\n').map((s) => s.trim()).filter(Boolean);
+
+// Производственный календарь: загрузка на год из открытого источника или правка вручную.
+export function holidaysCard(calendar, reload) {
+  const year = new Date().getFullYear();
+  const yearIn = h('select', { 'aria-label': 'Год календаря' }, options([year, year + 1].map((y) => ({ key: y, label: String(y) }))));
+  const countryIn = h('select', { 'aria-label': 'Страна календаря' }, options(COUNTRIES));
+  countryIn.value = calendar.source.country;
+  const loadBtn = h('button', { class: 'btn', type: 'button' }, 'Загрузить производственный календарь');
+  loadBtn.onclick = guarded(async () => {
+    loadBtn.disabled = true;
+    try {
+      const r = await post('/admin/calendar/import', { year: Number(yearIn.value), country: countryIn.value });
+      toast(`${r.loaded.year}: ${t('праздников')} ${r.loaded.holidays}, ${t('рабочих выходных')} ${r.loaded.workdays}`, 'success');
+    } finally {
+      loadBtn.disabled = false;
+    }
+  }, reload);
+  const holidaysIn = h('textarea', { rows: 7, class: 'mono', 'aria-label': 'Праздничные дни' }, calendar.holidays.join('\n'));
+  const workdaysIn = h('textarea', { rows: 3, class: 'mono', 'aria-label': 'Рабочие выходные' }, calendar.workdays.join('\n'));
+  const source = calendar.source.mode === 'demo' ? t('демо-портал (в демо доступен календарь РФ на 2026–2027)') : calendar.source.host;
   return h('section', { class: 'card' },
-    h('h3', null, 'Праздничные дни'),
-    h('p', { class: 't-sub' }, 'Нерабочие дни, выпадающие на будни. По одной дате в строке, формат ГГГГ-ММ-ДД. Действует для сроков, рассчитанных после сохранения.'),
-    h('form', { class: 'stack', onsubmit: guarded(() => patch('/admin/holidays', { dates: input.value.split('\n').map((s) => s.trim()).filter(Boolean) }), reload, 'Список праздников сохранён') },
-      input, h('div', null, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Сохранить праздники'))));
+    h('h3', null, 'Производственный календарь'),
+    h('p', { class: 't-sub' }, 'Сроки SLA считаются в рабочих днях. Календарь на год загружается из открытого источника (праздники и переносы) и заменяет даты этого года; другие годы не меняются.'),
+    h('div', { class: 'row calendar-load' }, yearIn, countryIn, loadBtn),
+    h('p', { class: 't-sub' }, `${t('Источник')}: `, h('span', { 'data-no-i18n': '' }, source)),
+    h('form', { class: 'stack', onsubmit: guarded(() => patch('/admin/holidays', { dates: lines(holidaysIn), workdays: lines(workdaysIn) }), reload, 'Календарь сохранён') },
+      field('Праздничные дни', holidaysIn, 'Нерабочие дни, выпадающие на будни. По одной дате в строке, ГГГГ-ММ-ДД.'),
+      field('Рабочие выходные', workdaysIn, 'Субботы и воскресенья, которые по переносу рабочие.'),
+      h('div', null, h('button', { class: 'btn btn-primary', type: 'submit' }, 'Сохранить календарь'))));
 }
 
 export function usersAdminCard(users, me, reload) {
@@ -69,8 +93,18 @@ export function usersAdminCard(users, me, reload) {
       ? h('div', { class: 'b24-link' }, h('span', { class: 't-sub' }, `ID ${u.b24Id}`),
         !isSelf && h('button', { class: 'btn btn-ghost btn-sm', type: 'button', 'aria-label': `${t('Отвязать от Битрикс24')}: ${u.name}`, onclick: unlink }, 'Отвязать'))
       : h('span', { class: 't-sub' }, '—');
+    // Рабочие контакты: обычно приходят из Битрикс24 вместе с оргструктурой, здесь — правка вручную.
+    const contactIn = (key, type, label, max) => h('input', { type, value: u[key] ?? '', maxlength: max, placeholder: label, 'aria-label': `${t(label)}: ${u.name}` });
+    const positionIn = contactIn('position', 'text', 'Должность', 80);
+    const emailIn = contactIn('email', 'email', 'Почта', 120);
+    const phoneIn = contactIn('phone', 'tel', 'Телефон', 30);
+    const contacts = h('details', { class: 'contact-edit' },
+      h('summary', null, u.email || u.phone || u.position ? 'Контакты' : 'Добавить контакты'),
+      h('form', { class: 'stack', onsubmit: guarded(() => patch(`/admin/users/${u.id}/contacts`, { position: positionIn.value, email: emailIn.value, phone: phoneIn.value }), reload, `${u.name}: ${t('контакты сохранены')}`) },
+        positionIn, emailIn, phoneIn, h('div', null, h('button', { class: 'btn btn-sm btn-primary', type: 'submit' }, 'Сохранить'))));
     return h('tr', { class: u.isActive ? '' : 'user-off' },
-      h('td', null, h('b', null, u.name), isSelf && h('span', { class: 'chip' }, 'это вы')),
+      h('td', null, h('b', null, u.name), isSelf && h('span', { class: 'chip' }, 'это вы'),
+        (u.email || u.phone) && h('div', { class: 't-sub', 'data-no-i18n': '' }, [u.email, u.phone].filter(Boolean).join(' · ')), contacts),
       h('td', null, role),
       h('td', null, department),
       h('td', null, h('input', { type: 'checkbox', checked: u.isAvailable, disabled: isSelf || !u.isActive, 'aria-label': `На месте: ${u.name}`,

@@ -27,7 +27,8 @@ const OUTBOX_STATUS = {
 };
 const ROLE_LABELS = { employee: 'Сотрудник', handler: 'Ответственный' };
 
-const modeBadge = (mode) => h('span', { class: `badge ${mode === 'off' ? 'status-closed' : 'status-implemented'}` }, MODE_LABELS[mode]);
+const modeBadge = (mode, labels = MODE_LABELS) => h('span', { class: `badge ${mode === 'off' ? 'status-closed' : 'status-implemented'}` }, labels[mode]);
+const MAIL_LABELS = { ...MODE_LABELS, demo: 'Демо-почта' };
 
 const busy = (button, action) => async () => {
   button.disabled = true;
@@ -139,11 +140,29 @@ function onecBlock(info, reload) {
     exportBlock(info));
 }
 
-export function integrationsCard(info, reload) {
+const MAIL_HINTS = {
+  live: 'Копии уведомлений уходят на рабочую почту сотрудников через почтовый сервер компании (SMTP).',
+  demo: 'Письма уходят по SMTP на учебный почтовый сервер на этом компьютере — наружу они не попадают. Для настоящей почты задайте SMTP_HOST.',
+  off: 'Письма не отправляются, только записываются в журнал. Чтобы включить, задайте SMTP_HOST.',
+};
+
+// Письма-уведомления: состояние, последние письма. Получают сотрудники с рабочей почтой, не отключившие письма.
+function mailBlock(info, letters, reload) {
+  const s = info.mailOutbox ?? {};
+  return h('div', { class: 'integration' },
+    h('div', { class: 'row' }, h('h4', null, 'Почта'), modeBadge(info.mail.mode, MAIL_LABELS), info.mail.host && h('code', null, info.mail.host)),
+    h('p', { class: 't-sub' }, MAIL_HINTS[info.mail.mode]),
+    info.mail.mode === 'demo' && h('p', null, h('a', { href: '/demo-portal/mail/', target: '_blank', rel: 'noopener' }, 'Открыть демо-почту: полученные письма →')),
+    h('p', { class: 't-sub' }, `${t('Отправлено')}: ${s.sent ?? 0} · ${t('В очереди')}: ${(s.pending ?? 0) + (s.sending ?? 0)} · ${t('Ошибка')}: ${s.failed ?? 0} · ${t('Не отправлено')}: ${s.skipped ?? 0}`),
+    letters.length > 0 && h('ul', { class: 'list-plain' }, letters.slice(0, 5).map((o) => outboxItem(o, reload))));
+}
+
+export function integrationsCard(info, reload, letters = []) {
   return h('section', { class: 'card' },
     h('h3', null, 'Интеграции с Битрикс24 и 1С УТ'),
     h('p', { class: 't-sub' }, 'Адреса и ключи подключения задаются переменными окружения на сервере и в интерфейсе не показываются.'),
-    h('div', { class: 'an-grid admin-pair' }, b24Block(info, reload), onecBlock(info, reload)));
+    h('div', { class: 'an-grid admin-pair' }, b24Block(info, reload), onecBlock(info, reload)),
+    mailBlock(info, letters, reload));
 }
 
 function outboxItem(o, reload) {
@@ -159,7 +178,7 @@ function outboxItem(o, reload) {
       h('span', { class: 'chip' }, `${o.channel} · ${o.method}`), ' → ', h('b', null, o.recipient),
       h('span', { class: `badge ${cls}` }, label),
       o.externalId && h('span', { class: 't-sub' }, `ID ${o.externalId}`)),
-    h('div', null, o.payload.MESSAGE ?? o.payload.TITLE),
+    h('div', null, o.payload.SUBJECT ?? o.payload.MESSAGE ?? o.payload.TITLE),
     o.error && h('div', { class: 'outbox-error' }, o.error),
     h('div', { class: 'row' },
       h('span', { class: 't-sub' }, new Date(o.createdAt).toLocaleString(locale())),

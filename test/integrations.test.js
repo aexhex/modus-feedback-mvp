@@ -192,7 +192,7 @@ describe('Битрикс24 через демо-портал', () => {
     const handler = await app.as('Руководитель закупок');
     await handler.post(`/api/tickets/${app.ticketId('A-001')}/status`, { status: 'in_review', comment: 'Смотрим' });
     await app.delivery.idle();
-    let row = outboxRow(app, 'user_id = ?', author);
+    let row = outboxRow(app, "user_id = ? AND channel = 'bitrix24'", author);
     assert.equal(row.status, 'pending');
     assert.equal(row.attempts, 1);
     assert.match(row.error, /уведомление не создано/);
