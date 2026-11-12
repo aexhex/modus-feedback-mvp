@@ -426,3 +426,26 @@ describe('обратная связь от клиентов', () => {
     }
   });
 });
+
+describe('приложение на телефоне', () => {
+  let app;
+  before(async () => { app = await startTestApp(); });
+  after(() => app.close());
+
+  it('отдаёт манифест, сервис-воркер и иконки с правильными типами', async () => {
+    const manifest = await fetch(`${app.base}/manifest.webmanifest`);
+    assert.equal(manifest.status, 200);
+    assert.match(manifest.headers.get('content-type'), /^application\/manifest\+json/);
+    const body = await manifest.json();
+    assert.equal(body.display, 'standalone');
+    assert.deepEqual(body.icons.map((i) => i.sizes).sort(), ['192x192', '512x512', '512x512']);
+    for (const icon of body.icons) {
+      const res = await fetch(`${app.base}${icon.src}`);
+      assert.equal(res.status, 200, icon.src);
+      assert.equal(res.headers.get('content-type'), 'image/png');
+    }
+    const sw = await fetch(`${app.base}/sw.js`);
+    assert.match(sw.headers.get('content-type'), /^text\/javascript/);
+    assert.match(await sw.text(), /\/api\//, 'сервис-воркер не кэширует API');
+  });
+});
