@@ -16,6 +16,18 @@ const ticketRows = (items) => items.map((t) => [
 
 const ruDate = (iso) => iso.split('-').reverse().join('.');
 
+// Охват и доверие из плана пилота (docs/CONCEPT.md): считаются здесь, а не вручную по выгрузке.
+function engagementSection(e) {
+  return section('Вовлечённость сотрудников (показатели пилота)', [
+    h('p', { class: 't-sub' }, 'Охват — доля сотрудников, которые за период подали обращение или отметили «У меня тоже». Доверие — доля авторов, подавших больше одного обращения. Анонимные обращения не учитываются.'),
+    h('div', { class: 'kpis' },
+      tile(`${e.overall.share}%`, `Охват (${e.overall.participants} из ${e.overall.headcount})`),
+      tile(e.trust.authors === 0 ? '—' : `${e.trust.share}%`, `Доверие (${e.trust.repeat} из ${e.trust.authors} авторов)`)),
+    table(['Подразделение', 'Участвовали', 'Сотрудников', 'Охват'],
+      e.coverage.map((d) => [d.department, String(d.participants), String(d.headcount), `${d.share}%`])),
+  ]);
+}
+
 export async function renderReport(el, { query, go }) {
   const r = await get(`/report${qs({ from: query.from, to: query.to })}`);
   const from = h('input', { type: 'date', value: r.from, 'aria-label': 'Начало периода' });
@@ -42,6 +54,7 @@ export async function renderReport(el, { query, go }) {
       tile(t.avgFirstResponseHours === null ? '—' : `${t.avgFirstResponseHours} ч`, 'До первого ответа'),
       tile(String(t.openNow), 'Открыто сейчас'),
       tile(String(t.overdueNow), 'Просрочено сейчас')),
+    engagementSection(r.engagement),
     section('Реализовано за период', r.implemented.length === 0 ? h('p', { class: 'muted' }, 'Нет')
       : table(['№', 'Тема', 'Категория', 'Что сделано'], ticketRows(r.implemented))),
     section('Отклонено за период', r.rejected.length === 0 ? h('p', { class: 'muted' }, 'Нет')

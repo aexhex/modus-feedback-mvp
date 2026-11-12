@@ -449,3 +449,67 @@ describe('приложение на телефоне', () => {
     assert.match(await sw.text(), /\/api\//, 'сервис-воркер не кэширует API');
   });
 });
+
+describe('рабочая установка', () => {
+  it('за прокси адрес клиента берётся из X-Forwarded-For, иначе — адрес соединения', async () => {
+    const { clientIp } = await import('../src/http.js');
+    const req = { headers: { 'x-forwarded-for': '10.1.2.3, 172.16.0.1' }, socket: { remoteAddress: '127.0.0.1' } };
+    assert.equal(clientIp(req, true), '10.1.2.3');
+    assert.equal(clientIp(req, false), '127.0.0.1', 'без TRUST_PROXY заголовку не доверяем');
+    assert.equal(clientIp({ headers: {}, socket: { remoteAddress: '::1' } }, true), '::1');
+  });
+
+  it('по HTTPS cookie сессии помечается Secure', async () => {
+    const app = await startTestApp({ secureCookie: true });
+    try {
+      const r = await app.request(null, 'POST', '/api/session', { userId: app.userId('Сотрудник офиса') });
+      assert.match(r.headers.get('set-cookie'), /; Secure/);
+    } finally {
+      await app.close();
+    }
+    const plain = await startTestApp();
+    try {
+      const r = await plain.request(null, 'POST', '/api/session', { userId: plain.userId('Сотрудник офиса') });
+      assert.doesNotMatch(r.headers.get('set-cookie'), /Secure/);
+    } finally {
+      await plain.close();
+    }
+  });
+
+  it('без демо-данных в пустой базе только администратор', async () => {
+    const app = await startTestApp({ seed: false });
+    try {
+      const users = app.db.prepare('SELECT name, role FROM users').all().map((u) => ({ ...u }));
+      assert.deepEqual(users, [{ name: 'Администратор системы', role: 'admin' }]);
+      assert.equal(app.db.prepare('SELECT COUNT(*) AS n FROM tickets').get().n, 0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('отчёт за период показывает охват по отделам и доверие без учёта анонимных', async () => {
+    const app = await startTestApp();
+    try {
+      const manager = await app.as('Директор по развитию');
+      const { engagement } = (await manager.get('/api/report?from=2026-01-01&to=2026-11-11')).json.data;
+      assert.ok(engagement.overall.headcount >= 24);
+      assert.ok(engagement.overall.participants > 0);
+      const sales = engagement.coverage.find((d) => d.department === 'Продажи');
+      assert.ok(sales.participants >= 1 && sales.participants <= sales.headcount);
+      assert.ok(engagement.trust.authors > 0 && engagement.trust.repeat <= engagement.trust.authors);
+
+      // Анонимное обращение нового автора не меняет ни охват, ни число авторов.
+      const before = engagement;
+      const emp = await app.as('Сотрудник офиса');
+      await emp.post('/api/tickets', {
+        type: 'problem', categoryId: app.db.prepare("SELECT id FROM categories WHERE name = 'Регламенты'").get().id,
+        title: 'Анонимно о регламенте', description: 'Текст анонимного обращения для проверки.', isAnonymous: true,
+      });
+      const after = (await manager.get('/api/report?from=2026-01-01&to=2026-11-11')).json.data.engagement;
+      assert.deepEqual(after.trust, before.trust);
+      assert.deepEqual(after.overall, before.overall);
+    } finally {
+      await app.close();
+    }
+  });
+});

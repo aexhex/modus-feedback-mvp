@@ -447,3 +447,34 @@ describe('1С УТ через демо-портал', () => {
     }
   });
 });
+
+describe('ежедневная синхронизация', () => {
+  it('загружает контрагентов и сообщает администратору об изменениях оргструктуры один раз', async () => {
+    const app = await startTestApp({ demoMode: true });
+    try {
+      const { runDailySync } = await import('../src/integrations/daily.js');
+      const { readIntegrationConfig, resolveEndpoints } = await import('../src/integrations/config.js');
+      const config = readIntegrationConfig({ env: {}, demoMode: true });
+      const endpoints = () => resolveEndpoints(config, app.base);
+      const run = () => runDailySync({ db: app.db, config, endpoints, now: () => '2026-11-12T03:00:00.000Z', logger: { error: () => {} } });
+
+      const first = await run();
+      assert.equal(first.counterparties.total, 7);
+      assert.match(first.org, /новых: 3/);
+      assert.match(first.org, /уволено: 1/);
+      const admin = await app.as('Администратор системы');
+      const note = (await admin.get('/api/notifications')).json.data.items[0];
+      assert.match(note.text, /В Битрикс24 изменилась оргструктура/);
+      // Ничего не применено без администратора.
+      assert.equal(app.db.prepare("SELECT is_active FROM users WHERE name = 'Руководитель проекта'").get().is_active, 1);
+
+      const second = await run();
+      assert.equal(second.org, null, 'о тех же изменениях повторно не сообщаем');
+      await admin.post('/api/admin/integrations/b24/org-apply');
+      assert.equal((await run()).org, null, 'после применения изменений нет');
+      assert.ok((await admin.get('/api/admin/audit')).json.data.some((a) => /по расписанию/.test(a.details ?? '')));
+    } finally {
+      await app.close();
+    }
+  });
+});

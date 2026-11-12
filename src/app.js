@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, normalize, extname, sep } from 'node:path';
 import { openDatabase } from './db.js';
-import { seedIfEmpty } from './seed.js';
+import { seedIfEmpty, bootstrapAdmin } from './seed.js';
 import { seedTemplates } from './templates.js';
 import { registerRoutes } from './routes.js';
 import { userByToken } from './auth.js';
@@ -13,8 +13,9 @@ import { readIntegrationConfig, resolveEndpoints, DEMO_PORTAL_PREFIX } from './i
 import { createDelivery, markOutboxHistory } from './integrations/delivery.js';
 import { createDemoPortal } from './integrations/demo-portal.js';
 import { pollTasks } from './integrations/b24-tasks.js';
+import { runDailySync } from './integrations/daily.js';
 import {
-  HttpError, createRouter, readJson, ok, fail, sendFile, parseCookies,
+  HttpError, createRouter, readJson, ok, fail, sendFile, parseCookies, clientIp,
 } from './http.js';
 
 const MIME = {
@@ -63,6 +64,9 @@ async function serveStatic(publicDir, pathname, res) {
 const DELIVERY_INTERVAL_MS = 15_000;
 // Как часто проверять статусы задач в Битрикс24 (облачный портал не может сообщить о них сам).
 const TASK_POLL_INTERVAL_MS = 5 * 60_000;
+// Справочники компании: контрагенты 1С и проверка оргструктуры Битрикс24 — раз в сутки и через минуту после запуска.
+const DAILY_SYNC_MS = 24 * 3600_000;
+const DAILY_SYNC_FIRST_MS = 60_000;
 
 /**
  * @param {{ dbPath: string, uploadsDir: string, publicDir: string, now?: () => string, seed?: boolean, logger?: Console,
@@ -70,15 +74,20 @@ const TASK_POLL_INTERVAL_MS = 5 * 60_000;
  * integrations — подключение к Битрикс24 и 1С вместо переменных окружения (тесты).
  */
 export function createApp({
-  dbPath, uploadsDir, publicDir, now = () => new Date().toISOString(), seed = true, logger = console,
+  // DEMO_DATA=0 — рабочий запуск: вместо демо-датасета в пустой базе только администратор.
+  dbPath, uploadsDir, publicDir, now = () => new Date().toISOString(), seed = process.env.DEMO_DATA !== '0', logger = console,
   escalationIntervalMs = ESCALATION_INTERVAL_MS,
   // Демо-режим разрешает сброс данных кнопкой в настройках. Включается только явно (DEMO_MODE=1),
   // чтобы случайный запуск без настройки не открыл стирание данных.
   demoMode = process.env.DEMO_MODE === '1',
   integrations: integrationOverrides = {},
+  // За HTTPS-прокси: адрес клиента из X-Forwarded-For и cookie сессии только по HTTPS.
+  trustProxy = process.env.TRUST_PROXY === '1',
+  secureCookie = process.env.COOKIE_SECURE === '1' || /^https:/i.test(process.env.PUBLIC_URL ?? ''),
 }) {
   const db = openDatabase(dbPath);
   const seeded = seed && seedIfEmpty(db, now(), uploadsDir);
+  if (!seed) bootstrapAdmin(db, process.env.ADMIN_NAME);
   seedTemplates(db);
   escalateOverdue(db, now());
   if (seeded) markOutboxHistory(db);
@@ -88,7 +97,7 @@ export function createApp({
   const endpoints = () => resolveEndpoints(config, `http://127.0.0.1:${server.address().port}`);
   const delivery = createDelivery({ db, mode: () => config.b24.mode, endpoints, now, logger });
   const checkTasks = (options) => pollTasks(db, endpoints().b24, now, options);
-  const ctx = { db, uploadsDir, now, demoMode, integrations: { config, endpoints, delivery, checkTasks } };
+  const ctx = { db, uploadsDir, now, demoMode, secureCookie, integrations: { config, endpoints, delivery, checkTasks } };
   const router = createRouter();
   registerRoutes(router);
   const allowMutation = createRateLimiter(LIMITS.mutationsPerMinute);
@@ -101,10 +110,11 @@ export function createApp({
     const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
     const user = userByToken(db, token, now());
     if (!route.options.public && !user) return fail(res, 401, 'Требуется вход');
-    if (route.options.strict && !allowPublicPost(req.socket.remoteAddress, Date.now())) {
+    const ip = clientIp(req, trustProxy);
+    if (route.options.strict && !allowPublicPost(ip, Date.now())) {
       return fail(res, 429, 'Слишком много отправок, повторите через минуту');
     }
-    if (route.options.mutate && !allowMutation(user?.id ?? req.socket.remoteAddress, Date.now())) {
+    if (route.options.mutate && !allowMutation(user?.id ?? ip, Date.now())) {
       return fail(res, 429, 'Слишком много запросов, повторите через минуту');
     }
     const hasBody = ['POST', 'PATCH', 'PUT'].includes(req.method);
@@ -167,6 +177,14 @@ export function createApp({
     server.on('listening', () => delivery.kick());
   } else {
     delivery.kick();
+  }
+  if (config.b24.mode !== 'off' || config.onec.mode !== 'off') {
+    const daily = () => runDailySync({ db, config, endpoints, now, logger });
+    const first = setTimeout(daily, DAILY_SYNC_FIRST_MS);
+    const every = setInterval(daily, DAILY_SYNC_MS);
+    first.unref();
+    every.unref();
+    server.on('close', () => { clearTimeout(first); clearInterval(every); });
   }
 
   return { server, db, delivery, demoPortal };

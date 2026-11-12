@@ -268,6 +268,36 @@ function finalOutcomes(db) {
 }
 
 /** Отчёт за период для планёрки: что подано, что рассмотрено, что реализовано и где застряло. */
+// Вовлечённость для плана пилота: охват — доля сотрудников отдела, которые за период подали обращение
+// или отметили «У меня тоже»; доверие — доля авторов, подавших за период больше одного обращения.
+// Анонимные обращения не учитываются: подсчёт «кто подал» по отделам мог бы раскрыть автора.
+function engagement(db, from, to) {
+  const participants = db
+    .prepare(
+      `SELECT DISTINCT u.id, u.department FROM users u
+       WHERE u.is_active = 1 AND (
+         EXISTS (SELECT 1 FROM tickets t WHERE t.author_id = u.id AND t.is_anonymous = 0 AND t.created_at >= ? AND t.created_at < ?)
+         OR EXISTS (SELECT 1 FROM supports s WHERE s.user_id = u.id AND s.created_at >= ? AND s.created_at < ?))`,
+    )
+    .all(from, to, from, to);
+  const headcount = db.prepare('SELECT department, COUNT(*) AS n FROM users WHERE is_active = 1 GROUP BY department').all();
+  const byDept = new Map(headcount.map((d) => [d.department, { department: d.department, headcount: d.n, participants: 0 }]));
+  for (const p of participants) byDept.get(p.department).participants += 1;
+  const coverage = [...byDept.values()]
+    .map((d) => ({ ...d, share: share(d.participants, d.headcount) }))
+    .sort((a, b) => b.share - a.share || a.department.localeCompare(b.department, 'ru'));
+  const authors = db
+    .prepare(`SELECT author_id, COUNT(*) AS n FROM tickets WHERE is_anonymous = 0 AND created_at >= ? AND created_at < ?
+              GROUP BY author_id`)
+    .all(from, to);
+  const totalHeadcount = headcount.reduce((sum, d) => sum + d.n, 0);
+  return {
+    coverage,
+    overall: { participants: participants.length, headcount: totalHeadcount, share: share(participants.length, totalHeadcount) },
+    trust: { authors: authors.length, repeat: authors.filter((a) => a.n > 1).length, share: share(authors.filter((a) => a.n > 1).length, authors.length) },
+  };
+}
+
 export function buildReport(db, query, nowIso) {
   const today = new Date(new Date(nowIso).getTime() + TZ_OFFSET_MS).toISOString().slice(0, 10);
   const toDate = query.to || today;
@@ -310,5 +340,6 @@ export function buildReport(db, query, nowIso) {
     topSupported: created.filter((r) => r.supports_count > 0)
       .sort((a, b) => b.supports_count - a.supports_count).slice(0, REPORT_TOP).map(line),
     workload: workload(rows, nowIso),
+    engagement: engagement(db, from, to),
   };
 }

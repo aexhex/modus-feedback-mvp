@@ -166,6 +166,15 @@ function seedAttachments(db, uploadsDir, inserted) {
   }
 }
 
+// Рабочий запуск без демо-данных (DEMO_DATA=0): в пустой базе создаётся один администратор,
+// который загружает оргструктуру из Битрикс24 (или импортирует CSV) и настраивает категории.
+export function bootstrapAdmin(db, name = 'Администратор системы') {
+  const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get();
+  if (n > 0) return false;
+  db.prepare("INSERT INTO users (name, role, department) VALUES (?, 'admin', 'IT')").run(String(name).trim().slice(0, 80) || 'Администратор системы');
+  return true;
+}
+
 // uploadsDir не обязателен: без него база заполняется без демонстрационных файлов.
 export function seedIfEmpty(db, nowIso, uploadsDir = null) {
   const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get();
