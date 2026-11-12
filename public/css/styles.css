@@ -662,3 +662,19 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 .demo-oauth h1 { margin-bottom: 12px; }
 .demo-oauth .login-note { margin-bottom: 20px; max-width: 720px; }
 .demo-oauth .user-card { text-decoration: none; color: inherit; }
+.manual-link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+
+/* Демо-портал: система внутри портала (пункт меню и вкладка задачи) */
+.demo-portal { display: grid; grid-template-rows: auto 1fr; height: 100vh; background: var(--paper); }
+.demo-portal-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.demo-portal-body { display: grid; grid-template-columns: 280px 1fr; min-height: 0; }
+.demo-portal-nav { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-right: 1px solid var(--line); overflow: auto; }
+.demo-portal-nav h2 { font-size: 15px; margin: 12px 0 0; }
+.demo-portal-nav .btn { width: 100%; text-align: left; white-space: normal; }
+.demo-portal iframe { width: 100%; height: 100%; border: 0; background: var(--paper); }
+@media (max-width: 720px) {
+  .demo-portal { height: auto; }
+  .demo-portal-body { grid-template-columns: 1fr; }
+  .demo-portal-nav { border-right: 0; border-bottom: 1px solid var(--line); }
+  .demo-portal iframe { height: 80vh; }
+}

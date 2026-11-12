@@ -124,7 +124,8 @@ describe('Битрикс24 через демо-портал', () => {
     const p = (await admin.post('/api/admin/integrations/b24/org-preview')).json.data;
     assert.equal(p.portalUsers, 27);
     assert.equal(p.linked.length, 23);
-    assert.deepEqual(p.notLinked, ['Администратор системы'], 'администратор по ФИО не связывается — только ADMIN_B24_ID');
+    assert.deepEqual(p.notLinked.map((u) => u.name), ['Администратор системы'], 'администратор по ФИО не связывается автоматически');
+    assert.equal(p.notLinked[0].candidates.length, 1, 'кандидат с портала предлагается для ручного связывания');
     assert.deepEqual(p.created.map((u) => u.name).sort(), ['Инженер сервиса', 'Руководитель сервиса', 'Специалист по закупкам']);
     assert.equal(p.created.find((u) => u.name === 'Руководитель сервиса').role, 'handler', 'руководитель отдела получает роль ответственного');
     assert.deepEqual(p.moved, [{ name: 'Координатор проекта', from: 'Проектный офис', to: 'Проектирование' }]);

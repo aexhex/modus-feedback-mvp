@@ -1,10 +1,10 @@
 // HTTP API. Все ответы — конверт { ok, data, error }.
 import {
-  TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, SESSION_COOKIE, SESSION_TTL_HOURS, TRANSITIONS,
+  TYPES, PRIORITIES, STATUSES, ROLES, LIMITS, TRANSITIONS,
 } from './config.js';
 import { forbidden, notFound, parseCookies } from './http.js';
 import { canSeeAnalytics, canAdminister } from './access.js';
-import { login, logout } from './auth.js';
+import { login, logout, sessionCookie, SESSION_MAX_AGE_S } from './auth.js';
 import {
   listTickets, getTicketDetail, similarTickets, improvementsBoard,
 } from './tickets-query.js';
@@ -35,15 +35,12 @@ import { buildHome } from './home.js';
 import { registerIntegrationRoutes } from './integrations/routes.js';
 import { IntegrationError } from './integrations/clients.js';
 import {
-  STATE_COOKIE, newState, stateCookie, stateMatches, authorizeUrl, b24UserByCode,
+  stateCookieName, newState, stateCookie, stateMatches, authorizeUrl, b24UserByCode, b24UserByToken,
 } from './integrations/b24-sso.js';
 
 const TASK_WAIT_MS = 3000;
 const delay = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref(); });
 
-// Secure — когда система работает по HTTPS (COOKIE_SECURE=1 или PUBLIC_URL на https): cookie не уйдёт по HTTP.
-const cookie = (token, maxAge, secure) =>
-  `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
 
 const toList = (dict) => Object.entries(dict).map(([key, label]) => ({ key, label }));
 
@@ -53,6 +50,53 @@ const listLoginAllowed = (ctx) => ctx.integrations.config.sso.mode !== 'live';
 
 function requireListLogin(ctx) {
   if (!listLoginAllowed(ctx)) throw forbidden('Вход — через Битрикс24');
+}
+
+// Сотрудник портала → сессия в системе. Уволенный на портале не входит сразу, не дожидаясь
+// ежедневной проверки оргструктуры; вход открывает только связь по ID Битрикс24.
+function portalSession(ctx, portalUser, { embedded = false } = {}) {
+  if (!portalUser.active) return { error: 'inactive' };
+  const user = ctx.db.prepare('SELECT id FROM users WHERE b24_id = ? AND is_active = 1').get(portalUser.id);
+  if (!user) return { error: 'not_linked' };
+  const token = login(ctx.db, user.id, ctx.now(), { embedded });
+  return { cookie: sessionCookie(token, SESSION_MAX_AGE_S, { secure: ctx.secureCookie, embedded }) };
+}
+
+/** Ответ портала или null, если портал недоступен или отказал (подробности — в журнал сервера). */
+async function askPortal(ctx, request) {
+  try {
+    return await request();
+  } catch (error) {
+    if (!(error instanceof IntegrationError)) throw error;
+    ctx.logger.error('[b24 sso]', error.message);
+    return null;
+  }
+}
+
+// Форму с ключом сотрудника присылает страница портала. Без этой проверки чужой сайт мог бы
+// отправить свой ключ и незаметно открыть сотруднику систему под чужой учётной записью.
+function fromPortal(req, sso) {
+  const { origin } = req.headers;
+  if (!origin) return false;
+  if (sso.origin) return origin === sso.origin;
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+}
+
+// Вкладка в задаче Битрикс24 открывает обращение, из которого задача создана; пункт меню — главную.
+function embedTarget(db, body) {
+  if (body.PLACEMENT !== 'TASK_VIEW_TAB') return '/#/home';
+  let taskId = '';
+  try {
+    taskId = String(JSON.parse(body.PLACEMENT_OPTIONS || '{}').taskId ?? '');
+  } catch {
+    return '/#/home';
+  }
+  const row = taskId ? db.prepare('SELECT ticket_id FROM b24_tasks WHERE task_id = ?').get(taskId) : null;
+  return row ? `/#/t/${row.ticket_id}` : '/#/home';
 }
 
 function requireRole(check, user) {
@@ -76,12 +120,12 @@ export function registerRoutes(router) {
   add('POST', '/api/session', ({ ctx, body, res }) => {
     requireListLogin(ctx);
     const token = login(ctx.db, body.userId, ctx.now());
-    res.setHeader('Set-Cookie', cookie(token, SESSION_TTL_HOURS * 3600, ctx.secureCookie));
+    res.setHeader('Set-Cookie', sessionCookie(token, SESSION_MAX_AGE_S, { secure: ctx.secureCookie }));
     return { loggedIn: true };
   }, { ...PUBLIC, mutate: true });
   add('DELETE', '/api/session', ({ ctx, token, res }) => {
-    logout(ctx.db, token);
-    res.setHeader('Set-Cookie', cookie('', 0, ctx.secureCookie));
+    const embedded = logout(ctx.db, token);
+    res.setHeader('Set-Cookie', sessionCookie('', 0, { secure: ctx.secureCookie, embedded }));
     return { loggedIn: false };
   }, MUTATE);
 
@@ -101,23 +145,25 @@ export function registerRoutes(router) {
     const back = (error, cookies = []) =>
       redirect(error ? `/?login_error=${error}` : '/', [stateCookie('', ctx.secureCookie), ...cookies]);
     // state защищает от подстановки чужого кода: вход завершает тот браузер, который его начал.
-    if (!stateMatches(parseCookies(req.headers.cookie)[STATE_COOKIE], query.state)) return back('state');
+    if (!stateMatches(parseCookies(req.headers.cookie)[stateCookieName(ctx.secureCookie)], query.state)) return back('state');
     if (query.error || !query.code) return back('denied');
-    let portalUser;
-    try {
-      portalUser = await b24UserByCode(sso, ctx.integrations.endpoints().sso, String(query.code));
-    } catch (error) {
-      if (!(error instanceof IntegrationError)) throw error;
-      ctx.logger.error('[b24 sso]', error.message);
-      return back('failed');
-    }
-    // Уволенный на портале не входит сразу, не дожидаясь ежедневной проверки оргструктуры.
-    if (!portalUser.active) return back('inactive');
-    const user = ctx.db.prepare('SELECT id FROM users WHERE b24_id = ? AND is_active = 1').get(portalUser.id);
-    if (!user) return back('not_linked');
-    const token = login(ctx.db, user.id, ctx.now());
-    return back(null, [cookie(token, SESSION_TTL_HOURS * 3600, ctx.secureCookie)]);
+    const portalUser = await askPortal(ctx, () => b24UserByCode(sso, ctx.integrations.endpoints().sso, String(query.code)));
+    if (!portalUser) return back('failed');
+    const session = portalSession(ctx, portalUser);
+    return session.error ? back(session.error) : back(null, [session.cookie]);
   }, { ...PUBLIC, mutate: true });
+
+  // Система внутри портала: пункт левого меню и вкладка в задаче. Битрикс24 открывает адрес приложения
+  // во фрейме и присылает формой ключ доступа текущего сотрудника (AUTH_ID) — второй раз входить не нужно.
+  add('POST', '/api/auth/b24/app', async ({ ctx, req, body, redirect }) => {
+    ssoConfig(ctx);
+    const endpoints = ctx.integrations.endpoints().sso;
+    if (!fromPortal(req, endpoints) || !body.AUTH_ID) return redirect('/?login_error=denied');
+    const portalUser = await askPortal(ctx, () => b24UserByToken(endpoints, String(body.AUTH_ID)));
+    if (!portalUser) return redirect('/?login_error=failed');
+    const session = portalSession(ctx, portalUser, { embedded: true });
+    return session.error ? redirect(`/?login_error=${session.error}`) : redirect(embedTarget(ctx.db, body), [session.cookie]);
+  }, { ...PUBLIC, mutate: true, form: true });
 
   // canSwitch — можно ли вернуться к выбору роли (демо); при входе только через Битрикс24 — просто «Выйти».
   add('GET', '/api/me', ({ ctx, user }) => ({ ...user, roleLabel: ROLES[user.role], canSwitch: listLoginAllowed(ctx) }));
@@ -135,6 +181,7 @@ export function registerRoutes(router) {
     templates: listTemplates(ctx.db),
     sla: getSlaDays(ctx.db),
     demoMode: ctx.demoMode,
+    demoData: ctx.demoData,
     b24Mode: ctx.integrations.config.b24.mode,
     hasCounterparties: ctx.db.prepare('SELECT 1 FROM counterparties WHERE is_active = 1 LIMIT 1').get() !== undefined,
   }));
@@ -347,7 +394,7 @@ export function registerRoutes(router) {
     if (!ctx.demoMode) throw forbidden('Сброс данных доступен только в демо-режиме');
     ctx.integrations.delivery.invalidate();
     resetDemo(ctx.db, ctx.uploadsDir, user.name, ctx.now());
-    res.setHeader('Set-Cookie', cookie('', 0, ctx.secureCookie));
+    res.setHeader('Set-Cookie', sessionCookie('', 0, { secure: ctx.secureCookie }));
     return { reset: true };
   }, MUTATE);
   admin('GET', '/api/admin/outbox', ({ ctx }) => listOutbox(ctx.db));
