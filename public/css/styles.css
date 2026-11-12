@@ -706,6 +706,7 @@ input[type=date] { border: 1px solid var(--line-strong); background: var(--surfa
 .lang-btn { border: 0; background: none; color: var(--muted); font: 700 12px/1 var(--font-text); letter-spacing: .04em; padding: 7px 10px; border-radius: 999px; cursor: pointer; min-height: 30px; }
 .lang-btn:hover { color: var(--text); }
 .lang-btn.active { background: var(--brand); color: #fff; }
+:root[data-theme="dark"] .lang-btn.active { background: var(--signal); }
 .lang-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .login-top { gap: 10px; align-items: center; }
 
