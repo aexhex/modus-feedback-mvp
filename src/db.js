@@ -200,6 +200,8 @@ CREATE TABLE IF NOT EXISTS feedback (
 export function openDatabase(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys = ON;');
+  // Встроенный lower() и LIKE в SQLite не меняют регистр кириллицы — поиск «заявк» не нашёл бы «Заявка».
+  db.function('ulower', { deterministic: true }, (value) => (value == null ? value : String(value).toLowerCase()));
   if (path !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
   // Миграция баз, созданных до появления повторных напоминаний об эскалации.

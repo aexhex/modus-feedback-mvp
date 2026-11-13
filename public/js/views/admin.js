@@ -4,8 +4,6 @@ import { get, post, patch } from '../api.js';
 import { templatesCard, holidaysCard, usersAdminCard, auditCard, retentionCard } from './admin-extra.js';
 import { integrationsCard, outboxCard } from './admin-integrations.js';
 
-const ROLE_LABELS = { employee: 'Сотрудник', handler: 'Ответственный', manager: 'Руководитель', admin: 'Администратор' };
-
 function categoriesCard(categories, staff, reload) {
   const staffOptions = staff.map((u) => ({ key: u.id, label: u.name }));
   const save = (id, body) => patch(`/admin/categories/${id}`, body).then(() => toast('Правило сохранено', 'success')).catch((e) => { toast(e.message, 'error'); reload(); });

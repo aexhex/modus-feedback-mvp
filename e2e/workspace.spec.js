@@ -141,3 +141,31 @@ test('демо-подсказки: что попробовать в роли, с
   await loginAs(page, 'Директор по развитию');
   await expect(hints).toContainText('Показатели');
 });
+
+test('справочники обновляются без перезагрузки: новое подразделение появляется в фильтре через минуту', async ({ page, request }) => {
+  await page.clock.install();
+  await loginAs(page, 'Директор по развитию');
+  await page.goto('/#/tickets?scope=all');
+  const department = page.getByLabel('Все подразделения');
+  await expect(department).toBeVisible();
+  const NEW_DEPT = 'Отдел проверки справочников';
+  await expect(department.locator('option', { hasText: NEW_DEPT })).toHaveCount(0);
+
+  // Тем временем сотрудник нового подразделения подаёт первое обращение (отдельная сессия).
+  const users = (await (await request.get('/api/demo-users')).json()).data.users;
+  await request.post('/api/session', { data: { userId: users.find((u) => u.role === 'admin').id } });
+  const all = (await (await request.post('/api/admin/users', { data: { name: 'Сотрудник нового отдела', role: 'employee', department: NEW_DEPT } })).json()).data;
+  await request.post('/api/session', { data: { userId: all.find((u) => u.department === NEW_DEPT).id } });
+  const categoryId = (await (await request.get('/api/meta')).json()).data.categories[0].id;
+  const ticket = await request.post('/api/tickets', { data: { type: 'problem', categoryId, title: 'Первое обращение нового отдела', description: 'Описание первого обращения нового отдела.' } });
+  expect(ticket.status()).toBe(201);
+
+  // Меньше минуты — справочники прежние; через минуту — обновляются при следующем переходе.
+  await page.goto('/#/home');
+  await page.goto('/#/tickets?scope=all');
+  await expect(department.locator('option', { hasText: NEW_DEPT })).toHaveCount(0);
+  await page.clock.fastForward('01:05');
+  await page.goto('/#/home');
+  await page.goto('/#/tickets?scope=all');
+  await expect(department.locator('option', { hasText: NEW_DEPT })).toHaveCount(1);
+});

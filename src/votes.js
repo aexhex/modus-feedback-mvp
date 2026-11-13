@@ -5,12 +5,12 @@ import { FINAL_STATUSES } from './config.js';
 import { badRequest } from './http.js';
 import { getVisibleTicketRow, isFinal } from './tickets-query.js';
 
-export const VOTE_BUDGET = 5;
-export const VOTES_PER_IDEA = 3;
+const VOTE_BUDGET = 5;
+const VOTES_PER_IDEA = 3;
 
 const FINAL_SQL = `(${FINAL_STATUSES.map((s) => `'${s}'`).join(',')})`;
 
-export function votesUsed(db, userId) {
+function votesUsed(db, userId) {
   return db
     .prepare(
       `SELECT COALESCE(SUM(v.count), 0) AS n FROM idea_votes v JOIN tickets t ON t.id = v.ticket_id
@@ -29,7 +29,7 @@ export function voteSummary(db, userId) {
 }
 
 // За что можно голосовать: опубликованное, ещё не рассмотренное предложение не своего авторства.
-export function canVoteFor(row, user) {
+function canVoteFor(row, user) {
   return Boolean(row.is_public) && row.type === 'idea' && !isFinal(row.status) && row.author_id !== user.id;
 }
 

@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 
 const BACKUP_NAME = /^backup-\d{8}-\d{6}$/;
-export const DEFAULT_KEEP = 14;
+const DEFAULT_KEEP = 14;
 
 /** @returns {{ dir: string, removed: number }} */
 export function backup(db, { uploadsDir, backupDir, keep = DEFAULT_KEEP, nowIso }) {

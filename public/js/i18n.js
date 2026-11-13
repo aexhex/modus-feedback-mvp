@@ -7,7 +7,7 @@ import en from './i18n/en.js';
 import { createTranslator } from './i18n-core.js';
 
 const STORAGE_KEY = 'lang';
-export const LANGS = Object.freeze([
+const LANGS = Object.freeze([
   { code: 'ru', label: 'RU', name: 'Русский', locale: 'ru-RU' },
   { code: 'kk', label: 'KZ', name: 'Қазақша', locale: 'kk-KZ' },
   { code: 'en', label: 'EN', name: 'English', locale: 'en-GB' },
@@ -17,7 +17,7 @@ const ATTRS = ['placeholder', 'aria-label', 'title', 'alt'];
 // Пользовательский текст и служебные элементы не переводятся.
 const SKIP_SELECTOR = 'script, style, textarea, [data-no-i18n], .text-block';
 
-export function currentLang() {
+function currentLang() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (LANGS.some((l) => l.code === saved)) return saved;

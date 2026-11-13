@@ -40,7 +40,7 @@ function supporterIds(db, ticketId) {
   return db.prepare('SELECT user_id FROM supports WHERE ticket_id = ?').all(ticketId).map((r) => r.user_id);
 }
 
-export function validateNewTicket(db, input) {
+function validateNewTicket(db, input) {
   const type = oneOf(input.type, TYPES, 'Тип');
   const categoryId = Number(input.categoryId);
   const category = db.prepare('SELECT id FROM categories WHERE id = ? AND is_active = 1').get(categoryId);
@@ -239,14 +239,21 @@ export function markDuplicate(db, user, id, input, now) {
   const row = getVisibleTicketRow(db, user, id);
   if (!canProcess(user, row)) throw forbidden();
   if (isFinal(row.status)) throw badRequest('Обращение уже закрыто');
-  const original = db.prepare('SELECT id, code, author_id FROM tickets WHERE code = ?').get(String(input.code || '').trim().toUpperCase());
+  const original = db.prepare('SELECT id, code, author_id, duplicate_of FROM tickets WHERE code = ?').get(String(input.code || '').trim().toUpperCase());
   if (!original || original.id === row.id) throw badRequest('Укажите номер другого существующего обращения');
+  // Объединяем только с исходным: иначе A → B и затем B → A закрыли бы оба без живого обращения.
+  if (original.duplicate_of) {
+    const root = db.prepare('SELECT code FROM tickets WHERE id = ?').get(original.duplicate_of);
+    throw badRequest(`${original.code} само объединено с ${root?.code ?? 'другим обращением'} — укажите исходное`);
+  }
   const resolution = `Дубликат обращения ${original.code}. Автор добавлен в поддержавшие исходное обращение.`;
   inTransaction(db, () => {
     db.prepare(
       `UPDATE tickets SET status = 'closed', duplicate_of = ?, resolution = ?, resolved_at = ?, updated_at = ?,
          first_response_at = COALESCE(first_response_at, ?) WHERE id = ?`,
     ).run(original.id, resolution, now, now, now, row.id);
+    // Как при любом закрытии: голоса за дубликат возвращаются сотрудникам.
+    db.prepare('DELETE FROM idea_votes WHERE ticket_id = ?').run(row.id);
     if (original.author_id !== row.author_id) {
       db.prepare('INSERT OR IGNORE INTO supports (ticket_id, user_id, created_at) VALUES (?, ?, ?)').run(original.id, row.author_id, now);
     }
@@ -288,7 +295,7 @@ export function rateTicket(db, user, id, input, now) {
 // появилось то, что не предназначено всем сотрудникам.
 // Автор исправляет текст, пока обращение не взяли в работу: «Новое» или «Ожидает уточнения».
 // Позже текст не меняется, чтобы решение ответственного относилось к тому, что он прочитал.
-export const EDITABLE_STATUSES = Object.freeze(['new', 'need_info']);
+const EDITABLE_STATUSES = Object.freeze(['new', 'need_info']);
 
 export function editTicket(db, user, id, input, now) {
   const row = getVisibleTicketRow(db, user, id);

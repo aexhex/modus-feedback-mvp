@@ -1,4 +1,4 @@
-// Сценарий запасной видеозаписи (по локальному сценарию защиты): четыре сильных момента защиты, около полутора минут.
+// Сценарий запасной видеозаписи (по локальному сценарию защиты): пять сильных моментов защиты, около двух минут.
 import { test } from '@playwright/test';
 import { copyFileSync, mkdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { openTicket } from './helpers.js';
@@ -69,7 +69,15 @@ async function enter(page, role, name) {
   await page.locator('.user-chip b').waitFor();
 }
 
-test('видеозапись четырёх моментов защиты', async ({ page }) => {
+test('видеозапись пяти моментов защиты', async ({ page }) => {
+  // Подготовка за кадром: администратор загружает оргструктуру из Битрикс24 — без неё задача из обращения
+  // ждёт сопоставления ответственного (момент 5).
+  const users = (await (await page.request.get('/api/demo-users')).json()).data.users;
+  const admin = users.find((u) => u.role === 'admin');
+  await page.request.post('/api/session', { data: { userId: admin.id } });
+  await page.request.post('/api/admin/integrations/b24/org-apply', { data: {} });
+  await page.request.delete('/api/session');
+
   const voice = narrator(Date.now());
   const say = (key) => voice.say(page, key);
 
@@ -102,7 +110,8 @@ test('видеозапись четырёх моментов защиты', asyn
   await say('s2a');
   await voice.waitFree(page);
   await say('s2b');
-  await page.getByRole('link', { name: /Просрочено по SLA/ }).click();
+  // Плитка, а не ссылка из карточки подсказок с тем же текстом.
+  await page.locator('a.kpi', { hasText: 'Просрочено по SLA' }).click();
   await page.locator('tbody tr').first().waitFor();
   await voice.waitFree(page);
   await openTicket(page, 'A-007');
@@ -144,8 +153,32 @@ test('видеозапись четырёх моментов защиты', asyn
   await center(page.locator('.vote-stepper'));
   await voice.waitFree(page);
   await say('s4b');
+
+  // 5. Встроено в Битрикс24: задача из обращения и обратная связь по её статусу.
   await voice.waitFree(page);
-  await caption(page, 'Работающий MVP: 130 серверных тестов, 47 тестов интерфейса, проверка доступности');
+  await enter(page, 'handler', 'Ответственный за договоры');
+  await openTicket(page, 'A-009');
+  await caption(page, '5. Принятое предложение уходит задачей в Битрикс24');
+  await say('s5a');
+  await page.locator('.more-actions summary').click();
+  await center(page.locator('.more-actions'));
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: 'Создать задачу в Битрикс24' }).click();
+  await page.locator('.toast-success').last().waitFor();
+  await page.locator('.more-actions').evaluate((d) => { d.open = true; });
+  await center(page.locator('.more-actions'));
+  await voice.waitFree(page);
+  await page.getByRole('button', { name: 'Завершить задачу на демо-портале' }).click();
+  await page.locator('.timeline', { hasText: 'подтвердите результат' }).waitFor();
+  await caption(page, 'Задачу закрыли — система видит это и просит зафиксировать итог');
+  await center(page.locator('.timeline').getByText('подтвердите результат').first());
+  await say('s5b');
+  await voice.waitFree(page);
+  // Финал — на экране входа с логотипом, как в сценарии защиты.
+  await page.request.delete('/api/session');
+  await page.goto('/');
+  await page.locator('.role-card').first().waitFor();
+  await caption(page, 'Работающая система: 266 серверных тестов, 80 тестов интерфейса, аудит безопасности, нагрузка 10 000 обращений');
   await say('outro');
   await voice.waitFree(page);
   await page.waitForTimeout(800);

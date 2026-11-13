@@ -1,6 +1,7 @@
 // Настраиваемые сроки SLA: хранятся в таблице settings, по умолчанию — из config.js.
 import { SLA_HOURS, PRIORITIES, HOLIDAYS, BUSINESS_TZ_OFFSET_HOURS } from './config.js';
 import { badRequest } from './http.js';
+import { inTransaction } from './db.js';
 
 const SLA_KEY = 'sla';
 const HOURS_PER_DAY = 24;
@@ -57,7 +58,7 @@ const HOLIDAYS_MAX = 400;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** @returns {Set<string>} нерабочие праздничные дни; по умолчанию — список из config.js */
-export function getHolidays(db) {
+function getHolidays(db) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(HOLIDAYS_KEY);
   if (!row) return HOLIDAYS;
   try {
@@ -71,7 +72,7 @@ export function getHolidays(db) {
 const WORKDAYS_KEY = 'workdays';
 
 /** @returns {Set<string>} рабочие выходные по переносу (суббота или воскресенье, когда работают) */
-export function getWorkdays(db) {
+function getWorkdays(db) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(WORKDAYS_KEY);
   try {
     const stored = row ? JSON.parse(row.value) : [];
@@ -136,10 +137,11 @@ export function getDepartmentTimezones(db) {
 
 // Новый пояс действует для сроков, рассчитанных после сохранения, и для отчётов сразу.
 // departments — пояса филиалов: { «Подразделение»: смещение | null (как у компании) }.
+// Сначала проверяется всё, потом сохраняется вместе: при ошибке не остаётся половины изменений.
 export function setTimezone(db, input) {
   const offset = Number(input.offset);
   if (!validOffset(offset)) throw badRequest('Часовой пояс: смещение от UTC — целое число часов от −12 до +14');
-  saveSetting(db, TIMEZONE_KEY, offset);
+  let departments = null;
   if (input.departments !== undefined) {
     if (typeof input.departments !== 'object' || input.departments === null || Array.isArray(input.departments)) {
       throw badRequest('Пояса подразделений: ожидается список');
@@ -148,8 +150,12 @@ export function setTimezone(db, input) {
       .filter(([, v]) => v !== null && v !== '')
       .map(([name, v]) => [String(name).slice(0, 80), Number(v)]);
     if (entries.length > 200 || entries.some(([, v]) => !validOffset(v))) throw badRequest('Часовой пояс подразделения: целое число часов от −12 до +14');
-    saveSetting(db, DEPT_TIMEZONES_KEY, Object.fromEntries(entries.filter(([, v]) => v !== offset)));
+    departments = Object.fromEntries(entries.filter(([, v]) => v !== offset));
   }
+  inTransaction(db, () => {
+    saveSetting(db, TIMEZONE_KEY, offset);
+    if (departments) saveSetting(db, DEPT_TIMEZONES_KEY, departments);
+  });
   return offset;
 }
 
@@ -193,13 +199,16 @@ const saveSetting = (db, key, value) => db
 // workdays — необязательно: рабочие выходные по переносу (только субботы и воскресенья).
 export function setHolidays(db, input) {
   const dates = parseDates(input.dates, 'Праздники');
-  saveSetting(db, HOLIDAYS_KEY, dates);
+  let workdays = null;
   if (input.workdays !== undefined) {
-    const workdays = parseDates(input.workdays, 'Рабочие выходные');
+    workdays = parseDates(input.workdays, 'Рабочие выходные');
     const weekday = workdays.find((d) => ![0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay()));
     if (weekday) throw badRequest(`${weekday}: рабочий выходной должен быть субботой или воскресеньем`);
-    saveSetting(db, WORKDAYS_KEY, workdays);
   }
+  inTransaction(db, () => {
+    saveSetting(db, HOLIDAYS_KEY, dates);
+    if (workdays) saveSetting(db, WORKDAYS_KEY, workdays);
+  });
   return dates.length;
 }
 

@@ -43,7 +43,7 @@ const SECURITY_HEADERS = Object.freeze({ ...BASE_HEADERS, 'X-Frame-Options': 'DE
 export const pageHeaders = (frameAncestors) =>
   (frameAncestors ? { ...BASE_HEADERS, 'Content-Security-Policy': csp(frameAncestors) } : SECURITY_HEADERS);
 
-export function sendJson(res, status, payload, extraHeaders = {}) {
+function sendJson(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     ...SECURITY_HEADERS,
     'Content-Type': 'application/json; charset=utf-8',

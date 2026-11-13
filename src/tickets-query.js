@@ -36,7 +36,7 @@ export function slaState(row, nowIso) {
   return { overdue: false, kind: null };
 }
 
-export function serializeTicket(row, user, nowIso) {
+function serializeTicket(row, user, nowIso) {
   return {
     id: row.id,
     code: row.code,
@@ -134,8 +134,10 @@ function buildWhere(user, query, nowIso, offsetMs) {
     }
   }
   if (query.q) {
-    where.push('(t.title LIKE ? OR t.description LIKE ? OR t.code LIKE ?)');
-    const like = `%${String(query.q).slice(0, 100)}%`;
+    // Без учёта регистра и для кириллицы; % и _ в запросе — обычные символы, а не шаблон.
+    where.push("(ulower(t.title) LIKE ? ESCAPE '!' OR ulower(t.description) LIKE ? ESCAPE '!' OR ulower(t.code) LIKE ? ESCAPE '!')");
+    const needle = String(query.q).slice(0, 100).toLowerCase().replace(/[!%_]/g, (c) => `!${c}`);
+    const like = `%${needle}%`;
     params.push(like, like, like);
   }
   if (query.overdue === '1') {

@@ -4,7 +4,7 @@ import { canSeeAnalytics } from './access.js';
 import { badRequest, forbidden, notFound } from './http.js';
 import { inTransaction } from './db.js';
 
-export const ANONYMITY_THRESHOLD = 3;
+const ANONYMITY_THRESHOLD = 3;
 const TITLE_MAX = 120;
 const QUESTION_MAX = 300;
 const ANSWER_MAX = 1000;
