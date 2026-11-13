@@ -2,6 +2,12 @@ import { test } from '@playwright/test';
 import { loginAs, openTicket } from './helpers.js';
 
 const shot = (page, name) => page.screenshot({ path: `docs/screenshots/${name}.png` });
+// Снимок отдельного блока: закреплённая шапка открепляется, иначе при прокрутке к блоку она закрывает его верх.
+async function elShot(locator, name) {
+  // Через свойство элемента: встроенный <style> запрещён политикой CSP.
+  await locator.page().evaluate(() => { const bar = document.querySelector('.topbar'); if (bar) bar.style.position = 'static'; });
+  await locator.screenshot({ path: `docs/screenshots/${name}.png` });
+}
 
 test('снимки экранов для README', async ({ page }) => {
   test.setTimeout(180_000);
@@ -66,13 +72,16 @@ test('снимки экранов для README', async ({ page }) => {
   await page.getByRole('button', { name: 'Переключить светлую и тёмную тему' }).click();
   await page.locator('figure.chart svg').waitFor();
   await shot(page, '09-home-dark');
+  await page.goto('/#/kanban');
+  await page.locator('.kb-card').first().waitFor();
+  await shot(page, '26-kanban-dark');
   await page.goto('/#/analytics');
   await page.locator('.kpi').first().waitFor();
   await shot(page, '10-analytics-dark');
   await page.getByRole('button', { name: 'Переключить светлую и тёмную тему' }).click();
 
   // Карта повторяющихся проблем и база решений (доработки по ТЗ 1.3 и 2.7).
-  await page.locator('.heatmap-card').screenshot({ path: 'docs/screenshots/18-problem-map.png' });
+  await elShot(page.locator('.heatmap-card'), '18-problem-map');
   await loginAs(page, 'Сотрудник офиса');
   await page.goto('/#/solutions');
   await page.locator('.solution').first().waitFor();
@@ -84,7 +93,7 @@ test('снимки экранов для README', async ({ page }) => {
   const integrations = page.locator('section.card', { hasText: 'Интеграции с Битрикс24 и 1С УТ' });
   await integrations.getByRole('button', { name: 'Загрузить оргструктуру' }).click();
   await integrations.getByRole('region', { name: 'Изменения из Битрикс24' }).waitFor();
-  await integrations.screenshot({ path: 'docs/screenshots/19-integrations.png' });
+  await elShot(integrations, '19-integrations');
   await integrations.getByRole('button', { name: 'Применить изменения' }).click();
   await integrations.getByRole('button', { name: 'Загрузить контрагентов' }).click();
   await page.locator('.toast-success').last().waitFor();
@@ -102,7 +111,7 @@ test('снимки экранов для README', async ({ page }) => {
   await page.locator('.more-actions').evaluate((d) => { d.open = true; });
   const taskPanel = page.locator('.more-actions .stack', { hasText: 'Статус в Битрикс24' }).last();
   await taskPanel.scrollIntoViewIfNeeded();
-  await page.locator('.more-actions').screenshot({ path: 'docs/screenshots/20-b24-task.png' });
+  await elShot(page.locator('.more-actions'), '20-b24-task');
 
   // Вход через Битрикс24: страница входа демо-портала.
   await page.evaluate(() => fetch('/api/session', { method: 'DELETE' }));
@@ -124,7 +133,7 @@ test('снимки экранов для README', async ({ page }) => {
   await integrations.getByRole('button', { name: 'Загрузить оргструктуру' }).click();
   const manual = integrations.locator('.sync-group', { hasText: 'Не связаны автоматически' });
   await manual.waitFor();
-  await manual.screenshot({ path: 'docs/screenshots/23-manual-link.png' });
+  await elShot(manual, '23-manual-link');
 
   // Производственный календарь на год из источника.
   const calendar = page.locator('section.card').filter({ has: page.getByRole('heading', { name: 'Производственный календарь', exact: true }) });
@@ -132,10 +141,31 @@ test('снимки экранов для README', async ({ page }) => {
   await calendar.getByRole('button', { name: 'Загрузить производственный календарь' }).click();
   await page.locator('.toast-success').last().waitFor();
   await page.locator('.toast').evaluateAll((toasts) => toasts.forEach((t) => t.remove()));
-  await calendar.screenshot({ path: 'docs/screenshots/24-calendar.png' });
+  await elShot(calendar, '24-calendar');
 
   // Письма-уведомления: демо-почта с письмами, отправленными по SMTP.
   await page.goto('/demo-portal/mail/');
   await page.locator('.demo-letter').first().waitFor();
   await shot(page, '25-mail');
+
+  // Сроки: SLA, рабочие часы и часовой пояс компании и подразделений; хранение данных уволенных.
+  await page.goto('/#/admin');
+  const sla = page.locator('section.card').filter({ has: page.getByRole('heading', { name: 'Сроки рассмотрения (SLA)' }) });
+  await elShot(sla, '27-sla-timezone');
+  const retention = page.locator('section.card').filter({ has: page.getByRole('heading', { name: 'Хранение персональных данных' }) });
+  await elShot(retention, '28-retention');
+
+  // Мой профиль: контакты, письма и push-уведомления на этом устройстве.
+  await loginAs(page, 'Сотрудник офиса');
+  await page.goto('/#/profile');
+  await page.getByRole('heading', { name: 'Мой профиль' }).waitFor();
+  await shot(page, '29-profile');
+
+  // Экран входа в тёмной теме.
+  await page.evaluate(() => fetch('/api/session', { method: 'DELETE' }));
+  await page.goto('/');
+  await page.locator('.role-card').first().waitFor();
+  await page.getByRole('button', { name: 'Переключить светлую и тёмную тему' }).click();
+  await shot(page, '30-login-dark');
+  await page.getByRole('button', { name: 'Переключить светлую и тёмную тему' }).click();
 });
