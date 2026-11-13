@@ -58,7 +58,7 @@ test('руководитель: просроченные, фильтр в адр
   ]);
   expect(download.suggestedFilename()).toBe('obrashcheniya.csv');
 
-  await page.getByRole('link', { name: 'Показатели' }).click();
+  await page.getByRole('link', { name: 'Показатели', exact: true }).click();
   await expect(page.locator('.kpi.alert')).toContainText('Просрочено по SLA');
   await expect(page.locator('.kpi.alert .kpi-value')).toHaveText('4');
 });
@@ -74,7 +74,7 @@ test('постраничный вывод реестра', async ({ page }) => {
 
 test('сотруднику недоступны аналитика и настройки', async ({ page }) => {
   await loginAs(page, 'Сотрудник офиса');
-  await expect(page.getByRole('link', { name: 'Показатели' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Показатели', exact: true })).toHaveCount(0);
   await page.goto('/#/analytics');
   await expect(page.locator('#content')).toContainText('нет доступа');
 });

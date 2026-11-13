@@ -39,7 +39,7 @@ test('отчёт о внедрении появляется в карточке 
 
 test('руководитель: нагрузка в аналитике и отчёт за период', async ({ page }) => {
   await loginAs(page, 'Директор по развитию');
-  await page.getByRole('link', { name: 'Показатели' }).click();
+  await page.getByRole('link', { name: 'Показатели', exact: true }).click();
   await expect(page.locator('.card', { hasText: 'Нагрузка по ответственным' })).toContainText('IT-специалист');
   await expect(page.locator('.card', { hasText: 'Среднее время в статусе' })).toContainText('На рассмотрении');
 
