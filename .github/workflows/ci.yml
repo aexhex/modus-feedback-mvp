@@ -50,12 +50,23 @@ jobs:
       - uses: actions/checkout@v4
       - name: Сборка образа
         run: docker build -t feedback-mvp .
-      - name: Контейнер отвечает (рабочий режим, без демо-данных)
+      - name: Контейнер отвечает (рабочий режим, без демо-данных, вход из списка — как в README)
         run: |
-          docker run -d --name app -p 3000:3000 -e DEMO_DATA=0 feedback-mvp
+          docker run -d --name app -p 3000:3000 -e DEMO_DATA=0 -e ALLOW_LIST_LOGIN=1 feedback-mvp
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/api/demo-users | grep -q 'Администратор системы'; then exit 0; fi
             sleep 1
           done
           docker logs app
+          exit 1
+      - name: Без входа через Битрикс24 и без ALLOW_LIST_LOGIN вход без пароля закрыт
+        run: |
+          docker run -d --name closed -p 3001:3000 -e DEMO_DATA=0 feedback-mvp
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3001/api/auth/options | grep -q '"list":false'; then
+              test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/demo-users)" = 403 && exit 0
+            fi
+            sleep 1
+          done
+          docker logs closed
           exit 1
