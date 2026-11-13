@@ -20,6 +20,9 @@ import { renderProfile } from './views/profile.js';
 import { setupPwa, installButton, unsubscribePush } from './pwa.js';
 
 const NOTIFY_POLL_MS = 30_000;
+// Справочники (категории, подразделения, шаблоны) меняют другие пользователи и администратор:
+// при переходе между страницами они обновляются, если загружены больше минуты назад.
+const META_TTL_MS = 60_000;
 const root = document.getElementById('app');
 const session = { me: null, meta: null };
 let pollTimer = null;
@@ -60,9 +63,24 @@ async function loadSession() {
   try {
     const me = await get('/me');
     const meta = await get('/meta');
-    Object.assign(session, { me, meta });
+    Object.assign(session, { me, meta, metaAt: Date.now() });
   } catch {
     Object.assign(session, { me: null, meta: null });
+  }
+}
+
+async function refreshMeta() {
+  session.meta = await get('/meta');
+  session.metaAt = Date.now();
+}
+
+async function refreshMetaIfStale() {
+  if (Date.now() - (session.metaAt ?? 0) < META_TTL_MS) return;
+  try {
+    await refreshMeta();
+  } catch (error) {
+    // Нет связи — страница откроется с прежними справочниками; выход по 401 обработает сам переход.
+    if (error.status === 401) throw error;
   }
 }
 
@@ -211,11 +229,9 @@ async function render() {
     return mount(content, h('div', { class: 'empty' }, 'Страница не найдена или нет доступа'));
   }
   const params = path.match(route.re).slice(1);
-  const ctx = {
-    me: session.me, meta: session.meta, query, params, go, rerender: render,
-    refreshMeta: async () => { session.meta = await get('/meta'); },
-  };
   try {
+    await refreshMetaIfStale();
+    const ctx = { me: session.me, meta: session.meta, query, params, go, rerender: render, refreshMeta };
     await route.view(content, ctx);
   } catch (error) {
     if (error.status === 401) return logout();
