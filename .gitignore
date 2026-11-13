@@ -7,3 +7,4 @@ playwright-report/
 # Материалы к защите храним локально, в репозиторий не попадают.
 docs/demo/
 docs/presentation/
+docs/DEMO.md
