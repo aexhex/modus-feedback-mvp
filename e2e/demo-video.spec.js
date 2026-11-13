@@ -178,7 +178,7 @@ test('видеозапись пяти моментов защиты', async ({ p
   await page.request.delete('/api/session');
   await page.goto('/');
   await page.locator('.role-card').first().waitFor();
-  await caption(page, 'Работающая система: 261 серверный тест, 79 тестов интерфейса, аудит безопасности, нагрузка 10 000 обращений');
+  await caption(page, 'Работающая система: 266 серверных тестов, 79 тестов интерфейса, аудит безопасности, нагрузка 10 000 обращений');
   await say('outro');
   await voice.waitFree(page);
   await page.waitForTimeout(800);

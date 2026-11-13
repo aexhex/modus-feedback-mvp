@@ -1192,4 +1192,7 @@ export default {
   'Сроки, рабочие часы и часовой пояс; «Сбросить демо-данные» перед показом': 'Deadlines, working hours and time zone; “Reset demo data” before a demo',
   'Что попробовать в роли «{1}»': 'What to try as “{1}”',
   'Что попробовать в этой роли': 'What to try in this role',
+  '1С вернула пустой справочник контрагентов — проверьте права учётной записи; клиенты не изменены': '1C returned an empty counterparty directory — check the account permissions; clients were not changed',
+  '{1} само объединено с {2} — укажите исходное': '{1} is itself merged into {2} — specify the original request',
+  'другим обращением': 'another request',
 };

@@ -2,7 +2,7 @@
 // 1С → система: справочник контрагентов через OData — обращение можно связать с клиентом.
 // Система → 1С: выгрузка обращений по токену — 1С забирает её регламентным заданием.
 import { timingSafeEqual, createHash } from 'node:crypto';
-import { onecGet } from './clients.js';
+import { onecGet, IntegrationError } from './clients.js';
 import { inTransaction } from '../db.js';
 import { badRequest, forbidden, notFound } from '../http.js';
 import { STATUSES, TYPES } from '../config.js';
@@ -15,6 +15,12 @@ const SELECT = 'Ref_Key,Code,Description,ИНН,DeletionMark';
 export async function syncCounterparties(db, onec, nowIso) {
   const rows = await onecGet(onec, 'Catalog_Контрагенты', { $select: SELECT });
   if (rows.length > MAX_COUNTERPARTIES) throw badRequest(`1С вернула больше ${MAX_COUNTERPARTIES} контрагентов`);
+  // Пустой ответ при заполненном справочнике — скорее сбой прав учётной записи 1С, чем удаление всех клиентов:
+  // не отключаем никого, как и при подозрительно малой оргструктуре из Битрикс24.
+  const known = db.prepare('SELECT COUNT(*) AS n FROM counterparties WHERE is_active = 1').get().n;
+  if (rows.length === 0 && known > 0) {
+    throw new IntegrationError('1С вернула пустой справочник контрагентов — проверьте права учётной записи; клиенты не изменены');
+  }
   return inTransaction(db, () => {
     const result = { total: 0, added: 0, updated: 0, deactivated: 0 };
     const seen = new Set();

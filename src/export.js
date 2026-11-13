@@ -1,13 +1,16 @@
 // Экспорт реестра в CSV для Excel (разделитель «;», BOM, защита от формул).
 import { LIMITS } from './config.js';
 import { listTickets } from './tickets-query.js';
+import { getTimezone } from './settings.js';
 
 const BOM = '﻿';
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+const HOUR_MS = 3_600_000;
+// Время — в часовом поясе компании из настроек, как в интерфейсе и в расчёте сроков.
 const dateFmt = new Intl.DateTimeFormat('ru-RU', {
-  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow',
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
 });
-const fmt = (iso) => (iso ? dateFmt.format(new Date(iso)).replace(',', '') : '');
+const formatter = (offsetHours) => (iso) => (iso ? dateFmt.format(new Date(Date.parse(iso) + offsetHours * HOUR_MS)).replace(',', '') : '');
 
 // Значение, начинающееся с =, +, -, @, Excel выполнил бы как формулу — экранируем апострофом.
 function cell(value) {
@@ -16,7 +19,7 @@ function cell(value) {
   return `"${safe.replaceAll('"', '""')}"`;
 }
 
-const COLUMNS = [
+const columns = (fmt) => [
   ['Номер', (t) => t.code],
   ['Тип', (t) => t.typeLabel],
   ['Категория', (t) => t.category.name],
@@ -40,9 +43,10 @@ export function exportTicketsCsv(db, user, query, nowIso, { maxRows = LIMITS.exp
   const { items, total } = listTickets(db, user, { ...query, page: 1, limit: maxRows }, nowIso, {
     maxLimit: maxRows,
   });
+  const cols = columns(formatter(getTimezone(db)));
   const lines = [
-    COLUMNS.map(([title]) => cell(title)).join(';'),
-    ...items.map((t) => COLUMNS.map(([, pick]) => cell(pick(t))).join(';')),
+    cols.map(([title]) => cell(title)).join(';'),
+    ...items.map((t) => cols.map(([, pick]) => cell(pick(t))).join(';')),
     // Файл не должен молча обрываться: если строк больше предела, последняя строка об этом говорит.
     ...(total > items.length ? [cell(`Показаны первые ${items.length} из ${total} обращений. Уточните фильтры, чтобы выгрузить остальные.`)] : []),
   ];

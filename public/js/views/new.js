@@ -11,9 +11,13 @@ const MIN_SIMILAR_QUERY = 15;
 
 function similarPanel() {
   const body = h('div', { class: 'stack' }, h('p', { class: 'muted' }, 'Начните описывать ситуацию — мы покажем похожие обращения коллег. Если такая проблема уже есть, нажмите «У меня тоже»; за похожую идею проголосуйте.'));
+  // Медленный ответ на старый текст не должен затирать более свежий результат.
+  let latest = 0;
   const update = async (text) => {
+    const request = ++latest;
     if (text.trim().length < MIN_SIMILAR_QUERY) return;
     const items = await get(`/tickets/similar${qs({ text })}`);
+    if (request !== latest) return;
     if (items.length === 0) {
       mount(body, h('p', { class: 'muted' }, 'Похожих обращений не найдено — ваша тема новая.'));
       return;

@@ -70,6 +70,8 @@ export function installButton() {
       showInstall();
     },
   }, 'Установить приложение');
+  // Шапка перерисовывается при каждом переходе: кнопки прежних страниц уже не в документе — забываем их.
+  installButtons.forEach((old) => { if (!old.isConnected) installButtons.delete(old); });
   installButtons.add(btn);
   return btn;
 }
