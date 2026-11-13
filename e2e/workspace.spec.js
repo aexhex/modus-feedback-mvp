@@ -121,3 +121,23 @@ test('канбан: четыре рабочие колонки в окне, за
   await page.locator('.kb-done > summary').click();
   await expect(page.locator('.kanban-done [data-status="implemented"] .kb-card').first()).toBeVisible();
 });
+
+test('демо-подсказки: что попробовать в роли, ссылка ведёт на экран, «Скрыть» запоминается', async ({ page }) => {
+  await loginAs(page, 'Сотрудник офиса');
+  const hints = page.getByRole('region', { name: 'Что попробовать в этой роли' });
+  await expect(hints).toContainText('Что попробовать в роли «Сотрудник»');
+  await expect(hints.getByRole('listitem')).toHaveCount(3);
+  await hints.getByRole('link', { name: /Подайте обращение/ }).click();
+  await expect(page).toHaveURL(/#\/new/);
+
+  await page.goto('/#/home');
+  await hints.getByRole('button', { name: 'Скрыть' }).click();
+  await expect(hints).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: /Здравствуйте/ })).toBeVisible();
+  await expect(hints).toHaveCount(0);
+
+  // У другой роли — свои подсказки.
+  await loginAs(page, 'Директор по развитию');
+  await expect(hints).toContainText('Показатели');
+});
