@@ -36,7 +36,7 @@ export function slaState(row, nowIso) {
   return { overdue: false, kind: null };
 }
 
-export function serializeTicket(row, user, nowIso) {
+function serializeTicket(row, user, nowIso) {
   return {
     id: row.id,
     code: row.code,

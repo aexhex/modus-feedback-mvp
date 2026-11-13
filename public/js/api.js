@@ -1,6 +1,6 @@
 // Клиент API: конверт { ok, data, error } → данные или исключение с понятным текстом.
 
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(status, message) {
     super(message);
     this.status = status;

@@ -1,4 +1,4 @@
-// Запасная видеозапись четырёх моментов защиты: npm run video → docs/demo/demo.webm
+// Запасная видеозапись пяти моментов защиты: npm run video → docs/demo/demo.webm
 import { defineConfig } from '@playwright/test';
 import base from './playwright.config.js';
 

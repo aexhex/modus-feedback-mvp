@@ -57,7 +57,7 @@ const HOLIDAYS_MAX = 400;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** @returns {Set<string>} нерабочие праздничные дни; по умолчанию — список из config.js */
-export function getHolidays(db) {
+function getHolidays(db) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(HOLIDAYS_KEY);
   if (!row) return HOLIDAYS;
   try {
@@ -71,7 +71,7 @@ export function getHolidays(db) {
 const WORKDAYS_KEY = 'workdays';
 
 /** @returns {Set<string>} рабочие выходные по переносу (суббота или воскресенье, когда работают) */
-export function getWorkdays(db) {
+function getWorkdays(db) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(WORKDAYS_KEY);
   try {
     const stored = row ? JSON.parse(row.value) : [];

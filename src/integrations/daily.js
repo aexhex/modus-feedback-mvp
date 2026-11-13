@@ -22,7 +22,7 @@ function orgSummary(p) {
 }
 
 /** @returns {Promise<string|null>} сводка изменений, о которых сообщено, или null */
-export async function checkOrgChanges(db, webhookUrl, nowIso) {
+async function checkOrgChanges(db, webhookUrl, nowIso) {
   const preview = await previewOrgSync(db, webhookUrl);
   let loggedOut = 0;
   for (const id of preview.dismissedIds) loggedOut += db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id).changes;

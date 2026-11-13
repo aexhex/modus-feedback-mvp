@@ -40,7 +40,7 @@ function supporterIds(db, ticketId) {
   return db.prepare('SELECT user_id FROM supports WHERE ticket_id = ?').all(ticketId).map((r) => r.user_id);
 }
 
-export function validateNewTicket(db, input) {
+function validateNewTicket(db, input) {
   const type = oneOf(input.type, TYPES, 'Тип');
   const categoryId = Number(input.categoryId);
   const category = db.prepare('SELECT id FROM categories WHERE id = ? AND is_active = 1').get(categoryId);
@@ -288,7 +288,7 @@ export function rateTicket(db, user, id, input, now) {
 // появилось то, что не предназначено всем сотрудникам.
 // Автор исправляет текст, пока обращение не взяли в работу: «Новое» или «Ожидает уточнения».
 // Позже текст не меняется, чтобы решение ответственного относилось к тому, что он прочитал.
-export const EDITABLE_STATUSES = Object.freeze(['new', 'need_info']);
+const EDITABLE_STATUSES = Object.freeze(['new', 'need_info']);
 
 export function editTicket(db, user, id, input, now) {
   const row = getVisibleTicketRow(db, user, id);

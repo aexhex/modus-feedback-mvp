@@ -69,7 +69,7 @@ export async function b24UserByAppToken(sso, endpoints, accessToken) {
  * Ключ доступа сотрудника → { id, active }. Ключ проверяет сам портал компании (адрес из настроек,
  * а не из запроса): ключ другого портала здесь недействителен.
  */
-export async function b24UserByToken(endpoints, accessToken) {
+async function b24UserByToken(endpoints, accessToken) {
   const me = await fetchJson(`${endpoints.rest}user.current.json?auth=${encodeURIComponent(accessToken)}`, {
     headers: { accept: 'application/json' },
   });

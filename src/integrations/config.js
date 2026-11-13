@@ -8,7 +8,7 @@ export const DEMO_PORTAL_PREFIX = '/demo-portal';
 // Демо-портал не секретен: он открыт только в демо-режиме и знает лишь синтетических пользователей.
 export const DEMO_CLIENT_ID = 'local.golos-demo';
 export const DEMO_CLIENT_SECRET = 'demo-secret';
-export const DEMO_MAIL_FROM = 'golos@modus-demo.example';
+const DEMO_MAIL_FROM = 'golos@modus-demo.example';
 const DEFAULT_CALENDAR_URL = 'https://isdayoff.ru/';
 // Сервер авторизации облачного Битрикс24 — общий для всех порталов.
 const B24_OAUTH_SERVER = 'https://oauth.bitrix.info/oauth/token/';

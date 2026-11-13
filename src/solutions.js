@@ -13,7 +13,7 @@ const OUTCOMES = Object.freeze({
 });
 
 /** Был ли у обращения статус «Реализовано» (в том числе если потом его закрыли). */
-export const WAS_IMPLEMENTED_SQL =
+const WAS_IMPLEMENTED_SQL =
   "EXISTS (SELECT 1 FROM events e WHERE e.ticket_id = t.id AND e.to_status = 'implemented')";
 
 export function listSolutions(db, user, query = {}) {
