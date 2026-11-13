@@ -1,4 +1,4 @@
-// Сценарий запасной видеозаписи (docs/DEMO.md): четыре сильных момента защиты, около полутора минут.
+// Сценарий запасной видеозаписи (по локальному сценарию защиты): четыре сильных момента защиты, около полутора минут.
 import { test } from '@playwright/test';
 import { copyFileSync, mkdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { openTicket } from './helpers.js';
