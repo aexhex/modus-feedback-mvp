@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Голос сотрудника — презентация</title>
+<style>
+  :root {
+    --navy: #082742; --navy-2: #0f3457; --red: #e40000; --red-text: #c00000;
+    --ink: #323a47; --muted: #526074; --paper: #f3f3f3; --white: #fff; --line: #dfe3ea;
+    --font: "Gilroy", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #1b1f26; font-family: var(--font); color: var(--ink); }
+  .slide {
+    width: 1280px; height: 720px; position: relative; overflow: hidden; background: var(--white);
+    padding: 60px 72px; margin: 24px auto; display: flex; flex-direction: column;
+  }
+  .slide.dark { background: var(--navy); color: #fff; }
+  .kicker { font-size: 15px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--red-text); margin: 0 0 14px; }
+  .dark .kicker { color: #ff6b6b; }
+  h1, h2 { margin: 0; color: var(--navy); letter-spacing: -.02em; line-height: 1.08; }
+  .dark h1, .dark h2 { color: #fff; }
+  h1 { font-size: 56px; font-weight: 800; }
+  h2 { font-size: 40px; font-weight: 800; margin-bottom: 28px; }
+  h1 em, h2 em { font-style: normal; color: var(--red); }
+  p { margin: 0; }
+  .ring { position: absolute; border-radius: 50%; border: 56px solid var(--red); opacity: .95; }
+  .num { position: absolute; right: 40px; bottom: 26px; font-size: 14px; color: #8a96a8; }
+  .dark .num { color: #8ea3c2; }
+
+  /* Логотип: знак и надпись, белые на тёмном фоне. */
+  .logo { display: flex; align-items: center; gap: 12px; color: #fff; margin-bottom: 34px; }
+  .logo svg { width: 54px; height: 54px; }
+  .logo span { display: flex; flex-direction: column; font-weight: 800; font-size: 21px; line-height: 1; letter-spacing: .03em; }
+
+  /* 1. Титул */
+  .title-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 48px; align-items: center; height: 100%; }
+  .title-shot { width: 100%; border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.45); position: relative; z-index: 1; }
+  .meta { margin-top: 34px; font-size: 19px; color: #c5cfe4; line-height: 1.6; }
+
+  /* Карточки */
+  .cards { display: grid; gap: 24px; flex: 1; }
+  .cards.three { grid-template-columns: repeat(3, 1fr); }
+  .card { background: var(--paper); border-radius: 16px; padding: 34px 30px; display: flex; flex-direction: column; gap: 14px; }
+  .card h3 { margin: 0; font-size: 26px; color: var(--navy); line-height: 1.2; }
+  .card p { font-size: 20px; line-height: 1.5; color: var(--muted); }
+  .badge { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; font-weight: 800; color: #fff; background: var(--navy); }
+  .badge.red { background: var(--red); }
+  .quote { margin-top: auto; padding-top: 22px; font-size: 22px; color: var(--navy); font-weight: 700; }
+  .quote span { color: var(--red-text); }
+
+  /* 3. Процесс */
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; margin-bottom: 30px; }
+  .step { background: var(--paper); border-radius: 14px; padding: 26px 20px; min-height: 220px; position: relative; }
+  .step b { display: block; font-size: 20px; color: var(--navy); margin: 10px 0 8px; }
+  .step span { font-size: 17px; line-height: 1.4; color: var(--muted); }
+  .step i { font-style: normal; font-weight: 800; font-size: 15px; color: var(--red-text); }
+  .step:not(:last-child)::after { content: "→"; position: absolute; right: -11px; top: 50%; transform: translate(50%, -50%); color: var(--red); font-size: 20px; font-weight: 800; }
+  .roles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .role { border: 2px solid var(--line); border-radius: 14px; padding: 20px; }
+  .role b { font-size: 18px; color: var(--navy); }
+  .role p { font-size: 16.5px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+
+  /* Скриншоты */
+  .shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 26px; flex: 1; min-height: 0; }
+  .shots.three { grid-template-columns: repeat(3, 1fr); }
+  .shot { display: flex; flex-direction: column; gap: 8px; min-height: 0; margin: 0; }
+  .shot img { width: 100%; height: 205px; object-fit: cover; object-position: top left; border-radius: 10px; border: 1px solid var(--line); }
+  .shots.three .shot img { height: 300px; }
+  .shot figcaption { font-size: 16px; color: var(--ink); line-height: 1.4; }
+  .shot figcaption b { color: var(--red-text); margin-right: 6px; }
+  .shots-slide h2 { margin-bottom: 18px; }
+
+  /* Цифры и списки */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 28px; }
+  .stat { background: var(--navy); color: #fff; border-radius: 16px; padding: 22px 22px; }
+  .stat b { display: block; font-size: 50px; font-weight: 800; line-height: 1; }
+  .stat span { display: block; margin-top: 10px; font-size: 15.5px; color: #c5cfe4; line-height: 1.35; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  .list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+  .list li { font-size: 18px; line-height: 1.42; padding-left: 26px; position: relative; }
+  .list li::before { content: ""; position: absolute; left: 0; top: 9px; width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+  .list b { color: var(--navy); }
+  .col-title { font-size: 15px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+
+  /* Интеграции */
+  table { border-collapse: collapse; width: 100%; font-size: 17px; }
+  th { text-align: left; font-size: 13.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 0 14px 10px; border-bottom: 2px solid var(--line); }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.38; }
+  td:first-child { font-weight: 800; color: var(--navy); width: 21%; }
+  code { font-size: 14.5px; background: var(--paper); padding: 1px 6px; border-radius: 5px; }
+  .tag { display: inline-block; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 99px; white-space: nowrap; }
+  .tag.done { background: #def3e5; color: #1b6b39; }
+  .note { margin-top: 16px; font-size: 16px; color: var(--muted); line-height: 1.45; }
+
+  /* Пилот */
+  .pilot { display: grid; grid-template-columns: 1fr 1.15fr; gap: 36px; flex: 1; }
+  .phases { display: grid; gap: 14px; align-content: start; }
+  .phase { background: var(--paper); border-radius: 14px; padding: 18px 22px; }
+  .phase .when { font-size: 13.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--red-text); }
+  .phase b { display: block; font-size: 19px; margin: 6px 0 4px; color: var(--navy); }
+  .phase p { font-size: 16px; line-height: 1.42; color: var(--muted); }
+  .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+  .kpi { border: 2px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .kpi b { display: block; font-size: 28px; color: var(--navy); font-weight: 800; }
+  .kpi span { font-size: 15px; color: var(--muted); line-height: 1.35; }
+  .decision { margin-top: 14px; font-size: 17px; color: var(--navy); font-weight: 700; line-height: 1.4; }
+
+  /* Финал */
+  .timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 6px; position: relative; z-index: 1; }
+  .stage { background: var(--navy-2); border-radius: 16px; padding: 22px; }
+  .stage .when { font-size: 14px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #ff8a8a; }
+  .stage b { display: block; font-size: 21px; margin: 10px 0; color: #fff; }
+  .stage p { font-size: 15.5px; line-height: 1.45; color: #c5cfe4; }
+  .stage.now { background: var(--red); }
+  .stage.now .when, .stage.now p { color: #fff; }
+  .thresholds { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 22px; position: relative; z-index: 1; }
+  .threshold { border: 2px solid #2a4b6f; border-radius: 14px; padding: 14px 16px; }
+  .threshold b { display: block; font-size: 30px; font-weight: 800; color: #fff; }
+  .threshold span { font-size: 14.5px; color: #c5cfe4; line-height: 1.35; }
+  .trust .list { gap: 16px; }
+  .trust .list li { font-size: 20px; }
+  .final { margin-top: auto; font-size: 30px; font-weight: 800; color: #fff; position: relative; z-index: 1; }
+  .final span { color: #ff6b6b; }
+
+  /* Показ в браузере: один слайд на экран, стрелки ← →. */
+  body.present { overflow: hidden; height: 100vh; display: grid; place-items: center; }
+  body.present .slide { display: none; margin: 0; flex-shrink: 0; }
+  body.present .slide.active { display: flex; }
+  .hint { text-align: center; color: #8a96a8; font: 14px var(--font); margin: 0 0 24px; }
+  body.present .hint { display: none; }
+
+  @page { size: 1280px 720px; margin: 0; }
+  @media print {
+    html, body { background: #fff; }
+    .slide { margin: 0; break-after: page; }
+    .hint { display: none; }
+    body.present { display: block; height: auto; overflow: visible; }
+    body.present .slide { display: flex; transform: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. Титул -->
+<section class="slide dark">
+  <div class="ring" style="width:420px;height:420px;right:-150px;top:-170px"></div>
+  <div class="title-grid">
+    <div>
+      <div class="logo" role="img" aria-label="ГК «Модус Трейд»">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <path fill="currentColor" d="M4.7 42A46 46 0 0 1 95.3 42H80A31 31 0 0 0 20 42Z"/>
+          <path fill="currentColor" d="M4.7 58A46 46 0 0 0 95.3 58H80A31 31 0 0 1 20 58Z"/>
+          <circle cx="50" cy="50.5" r="17.5" fill="#ed1111"/><circle cx="56.3" cy="44.6" r="5.4" fill="#fff"/>
+        </svg>
+        <span><span>МОДУС</span><span>ТРЕЙД</span></span>
+      </div>
+      <p class="kicker">Хакатон · трек «Обратная связь сотрудников»</p>
+      <h1>Голос сотрудника: <em>ни одно предложение</em> не теряется</h1>
+      <p class="meta">Работающая система: подача за минуту, ответственный и срок у каждого обращения, ответ автору, интеграция с Битрикс24 и 1С</p>
+    </div>
+    <img class="title-shot" src="../screenshots/07-home.png" alt="Главная руководителя: показатели и просрочки">
+  </div>
+  <span class="num">1 / 10</span>
+</section>
+
+<!-- 2. Проблема -->
+<section class="slide">
+  <p class="kicker">Проблема</p>
+  <h2>Идеи и жалобы теряются в чатах и разговорах</h2>
+  <div class="cards three">
+    <div class="card"><div class="badge red">?</div><h3>Автор не знает, что с предложением</h3><p>Нет статуса, срока и ответа. Даже отказ не объясняют — и в следующий раз человек промолчит.</p></div>
+    <div class="card"><div class="badge">↻</div><h3>Повторы не видны</h3><p>Одна и та же проблема всплывает в разных подразделениях, но руководитель видит её как разовые жалобы.</p></div>
+    <div class="card"><div class="badge">!</div><h3>Нет хозяина и срока</h3><p>Непонятно, кто должен рассмотреть вопрос и когда. Обращение молча зависает, улучшения не случаются.</p></div>
+  </div>
+  <p class="quote">Итог: «всё равно ничего не изменится» — <span>и сотрудники перестают предлагать</span></p>
+  <span class="num">2 / 10</span>
+</section>
+
+<!-- 3. Решение -->
+<section class="slide">
+  <p class="kicker">Решение</p>
+  <h2>Один канал: у каждого обращения есть <em>хозяин, срок и итог</em></h2>
+  <div class="flow">
+    <div class="step"><i>01</i><b>Подача</b><span>За минуту, с телефона, с фото или анонимно. Система подсказывает похожие</span></div>
+    <div class="step"><i>02</i><b>Маршрутизация</b><span>Ответственный по правилу категории; если отсутствует — резервный, затем руководитель</span></div>
+    <div class="step"><i>03</i><b>Рассмотрение</b><span>Срок в рабочих днях и часах с праздниками, эскалация и напоминания</span></div>
+    <div class="step"><i>04</i><b>Ответ автору</b><span>Результат или мотивированный отказ — без него закрыть нельзя. Автор оценивает итог</span></div>
+    <div class="step"><i>05</i><b>Итоги для всех</b><span>Реализованные улучшения, база решений, рейтинг авторов идей</span></div>
+  </div>
+  <div class="roles">
+    <div class="role"><b>Сотрудник</b><p>Подаёт, видит статус и ответ, голосует за идеи коллег</p></div>
+    <div class="role"><b>Ответственный</b><p>Очередь со сроками, канбан, уточнения, шаблоны, задача в Битрикс24</p></div>
+    <div class="role"><b>Руководитель</b><p>Просрочки, показатели с целями, карта проблем, сводка недели</p></div>
+    <div class="role"><b>Администратор</b><p>Маршрутизация, сроки и часовые пояса, оргструктура, хранение данных</p></div>
+  </div>
+  <span class="num">3 / 10</span>
+</section>
+
+<!-- 4. Четыре момента -->
+<section class="slide shots-slide">
+  <p class="kicker">Как это работает</p>
+  <h2>Четыре момента, которые решают проблему</h2>
+  <div class="shots">
+    <figure class="shot"><img src="../screenshots/02-new-ticket.png" alt="Новое обращение с подсказкой похожих"><figcaption><b>1</b>Подача за минуту: система находит похожее — вместо дубля «У меня тоже»</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/07-home.png" alt="Главная руководителя с плиткой просрочек"><figcaption><b>2</b>Ничего не теряется: просрочки видны сразу, эскалация автоматически</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/03-ticket.png" alt="Карточка обращения со шкалой этапов"><figcaption><b>3</b>Автор всегда получает ответ — даже отказ с причиной — и оценивает итог</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/11-feed.png" alt="Лента идей коллег"><figcaption><b>4</b>Идеи обсуждает вся компания: комментарии и 5 голосов у каждого</figcaption></figure>
+  </div>
+  <span class="num">4 / 10</span>
+</section>
+
+<!-- 5. Руководителю -->
+<section class="slide shots-slide">
+  <p class="kicker">Руководителю</p>
+  <h2>Видно не жалобы, а <em>системные проблемы</em></h2>
+  <div class="shots">
+    <figure class="shot"><img src="../screenshots/18-problem-map.png" alt="Карта повторяющихся проблем"><figcaption><b>→</b>Карта повторяющихся проблем: категория × подразделения за 90 дней</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/05-analytics.png" alt="Показатели с целями"><figcaption><b>→</b>Показатели из ТЗ с целями план/факт, нагрузка и время в статусах</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/08-kanban.png" alt="Канбан"><figcaption><b>→</b>Канбан: четыре рабочие колонки, просроченные сверху, перетаскивание</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/12-report.png" alt="Отчёт за период"><figcaption><b>→</b>Сводка недели для рассылки и отчёт за период с печатью в PDF</figcaption></figure>
+  </div>
+  <span class="num">5 / 10</span>
+</section>
+
+<!-- 6. Битрикс24 -->
+<section class="slide shots-slide">
+  <p class="kicker">Битрикс24</p>
+  <h2>Там, где сотрудники <em>уже работают</em></h2>
+  <div class="shots three">
+    <figure class="shot"><img src="../screenshots/21-b24-login.png" alt="Вход через Битрикс24"><figcaption><b>1</b>Вход учётной записью портала — пароль система не видит</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/22-portal-embed.png" alt="Система внутри портала"><figcaption><b>2</b>Система внутри портала: пункт меню и вкладка в задаче</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/19-integrations.png" alt="Загрузка оргструктуры"><figcaption><b>3</b>Оргструктура, уведомления и задачи: статус задачи возвращается в обращение</figcaption></figure>
+  </div>
+  <span class="num">6 / 10</span>
+</section>
+
+<!-- 7. Интеграции -->
+<section class="slide">
+  <p class="kicker">Интеграции</p>
+  <h2>Встраивается в привычные системы компании</h2>
+  <table>
+    <thead><tr><th>Система</th><th>Зачем</th><th>Как</th><th>Сейчас</th></tr></thead>
+    <tbody>
+      <tr><td>Битрикс24 — вход</td><td>Корпоративная учётная запись вместо пароля, система внутри портала</td><td>OAuth 2.0 локального приложения</td><td><span class="tag done">работает</span></td></tr>
+      <tr><td>Битрикс24 — оргструктура</td><td>Сотрудники, подразделения, руководители; уволенные отключаются</td><td>REST <code>user.get</code>, <code>department.get</code></td><td><span class="tag done">работает</span></td></tr>
+      <tr><td>Битрикс24 — уведомления и задачи</td><td>Сообщать в портале; внедрять принятые идеи задачей</td><td>REST <code>im.notify</code>, <code>tasks.task.add</code>, опрос статуса</td><td><span class="tag done">работает</span></td></tr>
+      <tr><td>1С УТ</td><td>Клиенты в обращениях и аналитике; выгрузка обращений для анализа</td><td>OData, выгрузка по токену</td><td><span class="tag done">работает</span></td></tr>
+      <tr><td>Почта и push</td><td>Копия уведомлений на рабочую почту и телефон</td><td>SMTP, Web Push (VAPID, RFC 8291)</td><td><span class="tag done">работает</span></td></tr>
+    </tbody>
+  </table>
+  <p class="note">Проверено на встроенном демо-портале, который отвечает в форматах REST Битрикс24 и OData 1С. К системам компании подключается переменными окружения — без изменения кода.</p>
+  <span class="num">7 / 10</span>
+</section>
+
+<!-- 8. Безопасность и доверие -->
+<section class="slide">
+  <p class="kicker">Доверие</p>
+  <h2>Сотрудник может говорить честно</h2>
+  <div class="two-col trust">
+    <div>
+      <p class="col-title">Анонимность и данные</p>
+      <ul class="list">
+        <li><b>Анонимная подача</b>: имя и отдел скрыты от всех, включая руководителей и журнал Битрикс24</li>
+        <li><b>Защита от косвенных признаков</b>: анонимное не назначается автору, не попадает в разрезы по отделам, имена файлов заменяются</li>
+        <li><b>Опросы</b>: только сводные результаты, после закрытия и от трёх ответивших</li>
+        <li><b>Данные уволенных</b> обезличиваются через выбранный срок или по просьбе</li>
+      </ul>
+    </div>
+    <div>
+      <p class="col-title">Безопасность</p>
+      <ul class="list">
+        <li><b>Вход через Битрикс24</b>, выбор роли без пароля — только в демо</li>
+        <li><b>Права по ролям</b>: чужое обращение отдаётся как «не найдено»</li>
+        <li><b>Защищённые сессии</b>, CSP, защита от XSS и CSRF, ограничение частоты запросов</li>
+        <li><b>Полный аудит безопасности</b> проведён, замечания исправлены и закрыты тестами</li>
+      </ul>
+    </div>
+  </div>
+  <p class="quote">Анонимный автор всё равно видит статус, получает ответ и отвечает на уточнения — <span>оставаясь анонимным</span></p>
+  <span class="num">8 / 10</span>
+</section>
+
+<!-- 9. Под капотом -->
+<section class="slide">
+  <p class="kicker">Качество</p>
+  <h2>Простой стек, проверенная работа</h2>
+  <div class="stats">
+    <div class="stat"><b>266</b><span>серверных тестов, покрытие строк около 98 %</span></div>
+    <div class="stat"><b>80</b><span>сквозных тестов в браузере, включая телефон</span></div>
+    <div class="stat"><b>10 000</b><span>обращений в нагрузочной проверке: экраны до 0,2 с</span></div>
+    <div class="stat"><b>AA</b><span>доступность WCAG 2.1 в светлой и тёмной теме</span></div>
+  </div>
+  <div class="two-col">
+    <div>
+      <p class="col-title">Технологии</p>
+      <ul class="list">
+        <li><b>Node.js + SQLite</b> без внешних зависимостей — один процесс, запуск одной командой или в Docker</li>
+        <li><b>Интерфейс без сборки</b>, устанавливается на телефон как приложение</li>
+        <li><b>Три языка</b>: русский, казахский, английский</li>
+      </ul>
+    </div>
+    <div>
+      <p class="col-title">Эксплуатация</p>
+      <ul class="list">
+        <li><b>Сроки</b> в рабочих часах, часовые пояса подразделений, производственный календарь РФ и РК</li>
+        <li><b>Журнал действий</b> администратора и отправки уведомлений</li>
+        <li><b>Резервные копии</b> раз в сутки</li>
+      </ul>
+    </div>
+  </div>
+  <span class="num">9 / 10</span>
+</section>
+
+<!-- 10. Пилот и развитие -->
+<section class="slide dark">
+  <div class="ring" style="width:360px;height:360px;right:-120px;bottom:-170px"></div>
+  <p class="kicker">Дальше</p>
+  <h2>Пилот: 2 отдела, 6 недель, 10 показателей</h2>
+  <div class="timeline">
+    <div class="stage now"><span class="when">Готово</span><b>Работающая система</b><p>Всё, что на слайдах: подача, сроки, ответ автору, аналитика, Битрикс24 и 1С на демо-портале</p></div>
+    <div class="stage"><span class="when">Неделя 0</span><b>Подготовка</b><p>Категории и ответственные компании, оргструктура из Битрикс24, цели показателей, инструктаж</p></div>
+    <div class="stage"><span class="when">Недели 1–5</span><b>Работа</b><p>«Сводка недели» спонсору, просрочки — на планёрке, итоги — в «Итогах внедрения»</p></div>
+    <div class="stage"><span class="when">Неделя 6</span><b>Решение</b><p>Опрос участников и отчёт за период. 7 порогов из 10 — масштабирование на группу компаний</p></div>
+  </div>
+  <div class="thresholds">
+    <div class="threshold"><b>≥ 90%</b><span>обращений получили первый ответ</span></div>
+    <div class="threshold"><b>≤ 24 ч</b><span>среднее время до первого ответа</span></div>
+    <div class="threshold"><b>0</b><span>просроченных на конец недели</span></div>
+    <div class="threshold"><b>≥ 3</b><span>реализованных улучшения за пилот</span></div>
+    <div class="threshold"><b>≥ 40%</b><span>сотрудников отделов участвуют</span></div>
+  </div>
+  <p class="final">Ни одно предложение не теряется — <span>каждое получает ответ</span></p>
+  <span class="num">10 / 10</span>
+</section>
+
+<p class="hint">Показ: клавиша F или Enter — по одному слайду на весь экран, стрелки ← → — переход, Esc — выход. PDF: Ctrl+P → «Сохранить как PDF».</p>
+
+<script>
+  // Режим показа: один слайд, вписанный в окно; печать (Ctrl+P → PDF) выводит все слайды по одному на страницу.
+  const slides = [...document.querySelectorAll('.slide')];
+  let current = 0;
+  const presenting = () => document.body.classList.contains('present');
+  const fit = () => {
+    const k = Math.min(innerWidth / 1280, innerHeight / 720);
+    slides.forEach((s) => { s.style.transform = presenting() ? `scale(${k})` : ''; });
+  };
+  const show = (i) => {
+    current = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, j) => s.classList.toggle('active', j === current));
+  };
+  addEventListener('keydown', (e) => {
+    if (!presenting() && ['f', 'F', 'Enter'].includes(e.key)) {
+      document.body.classList.add('present');
+      show(current);
+      fit();
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else if (presenting() && e.key === 'Escape') {
+      document.body.classList.remove('present');
+      fit();
+    } else if (presenting() && ['ArrowRight', 'PageDown', ' '].includes(e.key)) {
+      show(current + 1);
+    } else if (presenting() && ['ArrowLeft', 'PageUp'].includes(e.key)) {
+      show(current - 1);
+    }
+  });
+  addEventListener('resize', fit);
+</script>
+</body>
+</html>

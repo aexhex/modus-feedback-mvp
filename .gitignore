@@ -8,7 +8,8 @@ playwright-report/
 .env.*
 !.env.example
 
-# Материалы к защите храним локально, в репозиторий не попадают.
+# Видео, сценарий защиты с подсказками докладчику и служебные заметки — только локально.
+# Презентация (docs/presentation/slides.html и PDF) — в репозитории.
 docs/demo/
-docs/presentation/
 docs/DEMO.md
+docs/presentation/github-support-request.md
