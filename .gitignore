@@ -3,6 +3,10 @@ node_modules/
 test-results/
 playwright-report/
 .claude/settings.local.json
+# Настоящие ключи и пароли — только в .env на сервере; образец без значений — .env.example.
+.env
+.env.*
+!.env.example
 
 # Материалы к защите храним локально, в репозиторий не попадают.
 docs/demo/
