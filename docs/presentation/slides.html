@@ -63,12 +63,13 @@
   .role p { font-size: 16.5px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
 
   /* Скриншоты */
-  .shots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px 26px; flex: 1; min-height: 0; }
-  .shots.three { grid-template-columns: repeat(3, 1fr); }
+  /* Строки сетки делят свободную высоту поровну; картинка занимает то, что осталось после подписи,
+     поэтому подпись в две строки не вылезает за ячейку и за край слайда при любом шрифте. */
+  .shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 16px 26px; flex: 1; min-height: 0; }
+  .shots.three { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); }
   .shot { display: flex; flex-direction: column; gap: 8px; min-height: 0; margin: 0; }
-  .shot img { width: 100%; height: 205px; object-fit: cover; object-position: top left; border-radius: 10px; border: 1px solid var(--line); }
-  .shots.three .shot img { height: 300px; }
-  .shot figcaption { font-size: 16px; color: var(--ink); line-height: 1.4; }
+  .shot img { flex: 1 1 0; min-height: 0; width: 100%; object-fit: cover; object-position: top left; border-radius: 10px; border: 1px solid var(--line); }
+  .shot figcaption { flex: none; font-size: 15.5px; color: var(--ink); line-height: 1.35; }
   .shot figcaption b { color: var(--red-text); margin-right: 6px; }
   .shots-slide h2 { margin-bottom: 18px; }
 
@@ -121,7 +122,8 @@
   .threshold span { font-size: 14.5px; color: #c5cfe4; line-height: 1.35; }
   .trust .list { gap: 16px; }
   .trust .list li { font-size: 20px; }
-  .final { margin-top: auto; font-size: 30px; font-weight: 800; color: #fff; position: relative; z-index: 1; }
+  /* Фраза не заходит на красное кольцо в правом нижнем углу: ширина ограничена, при длинном шрифте — две строки. */
+  .final { margin-top: auto; max-width: 860px; font-size: 30px; font-weight: 800; line-height: 1.25; color: #fff; position: relative; z-index: 1; }
   .final span { color: #ff6b6b; }
 
   /* Показ в браузере: один слайд на экран, стрелки ← →. */
@@ -203,7 +205,7 @@
   <p class="kicker">Как это работает</p>
   <h2>Четыре момента, которые решают проблему</h2>
   <div class="shots">
-    <figure class="shot"><img src="../screenshots/02-new-ticket.png" alt="Новое обращение с подсказкой похожих"><figcaption><b>1</b>Подача за минуту: система находит похожее — вместо дубля «У меня тоже»</figcaption></figure>
+    <figure class="shot"><img src="../screenshots/02-new-ticket.png" alt="Новое обращение с подсказкой похожих"><figcaption><b>1</b>Подача за минуту: система находит похожее — вместо дубля «У&nbsp;меня&nbsp;тоже»</figcaption></figure>
     <figure class="shot"><img src="../screenshots/07-home.png" alt="Главная руководителя с плиткой просрочек"><figcaption><b>2</b>Ничего не теряется: просрочки видны сразу, эскалация автоматически</figcaption></figure>
     <figure class="shot"><img src="../screenshots/03-ticket.png" alt="Карточка обращения со шкалой этапов"><figcaption><b>3</b>Автор всегда получает ответ — даже отказ с причиной — и оценивает итог</figcaption></figure>
     <figure class="shot"><img src="../screenshots/11-feed.png" alt="Лента идей коллег"><figcaption><b>4</b>Идеи обсуждает вся компания: комментарии и 5 голосов у каждого</figcaption></figure>
@@ -287,9 +289,9 @@
   <p class="kicker">Качество</p>
   <h2>Простой стек, проверенная работа</h2>
   <div class="stats">
-    <div class="stat"><b>266</b><span>серверных тестов, покрытие строк около 98 %</span></div>
+    <div class="stat"><b>266</b><span>серверных тестов, покрытие строк около 98&nbsp;%</span></div>
     <div class="stat"><b>80</b><span>сквозных тестов в браузере, включая телефон</span></div>
-    <div class="stat"><b>10 000</b><span>обращений в нагрузочной проверке: экраны до 0,2 с</span></div>
+    <div class="stat"><b>10&nbsp;000</b><span>обращений в нагрузочной проверке: экраны до 0,2&nbsp;с</span></div>
     <div class="stat"><b>AA</b><span>доступность WCAG 2.1 в светлой и тёмной теме</span></div>
   </div>
   <div class="two-col">
@@ -325,11 +327,11 @@
     <div class="stage"><span class="when">Неделя 6</span><b>Решение</b><p>Опрос участников и отчёт за период. 7 порогов из 10 — масштабирование на группу компаний</p></div>
   </div>
   <div class="thresholds">
-    <div class="threshold"><b>≥ 90%</b><span>обращений получили первый ответ</span></div>
-    <div class="threshold"><b>≤ 24 ч</b><span>среднее время до первого ответа</span></div>
+    <div class="threshold"><b>≥&nbsp;90%</b><span>обращений получили первый ответ</span></div>
+    <div class="threshold"><b>≤&nbsp;24&nbsp;ч</b><span>среднее время до первого ответа</span></div>
     <div class="threshold"><b>0</b><span>просроченных на конец недели</span></div>
-    <div class="threshold"><b>≥ 3</b><span>реализованных улучшения за пилот</span></div>
-    <div class="threshold"><b>≥ 40%</b><span>сотрудников отделов участвуют</span></div>
+    <div class="threshold"><b>≥&nbsp;3</b><span>реализованных улучшения за пилот</span></div>
+    <div class="threshold"><b>≥&nbsp;40%</b><span>сотрудников отделов участвуют</span></div>
   </div>
   <p class="final">Ни одно предложение не теряется — <span>каждое получает ответ</span></p>
   <span class="num">10 / 10</span>
